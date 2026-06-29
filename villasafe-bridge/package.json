@@ -17,9 +17,9 @@
     "directories": { "output": "release", "buildResources": "build" },
     "files": ["electron/**/*", "ui/**/*", "build/**/*", "package.json"],
     "win": { "target": ["nsis"], "icon": "build/icon.ico" },
-    "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": true, "shortcutName": "VillaSafe Gate Bridge" },
-    "mac": { "target": ["dmg"], "icon": "build/icon.icns", "category": "public.app-category.utilities" },
-    "linux": { "target": ["AppImage"], "icon": "build/icon.png", "category": "Utility" }
+    "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": true, "shortcutName": "VillaSafe Gate Bridge", "artifactName": "VillaSafeGateBridge-Setup.${ext}" },
+    "mac": { "target": ["dmg"], "icon": "build/icon.icns", "category": "public.app-category.utilities", "artifactName": "VillaSafeGateBridge.${ext}" },
+    "linux": { "target": ["AppImage"], "icon": "build/icon.png", "category": "Utility", "artifactName": "VillaSafeGateBridge.${ext}" }
   },
   "dependencies": {
     "modbus-serial": "^8.0.16",

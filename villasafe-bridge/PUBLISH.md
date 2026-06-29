@@ -24,13 +24,15 @@ git push origin bridge-v1.0.4
 ```
 
 The matrix workflow then runs on Windows, macOS, and Ubuntu runners,
-produces:
+produces version-less filenames (so the VillaSafe dashboard's
+`releases/latest/download/...` links never break on a version bump):
 
-- `VillaSafeGateBridge-Setup-1.0.4.exe`
-- `VillaSafeGateBridge-1.0.4.dmg`
-- `VillaSafeGateBridge-1.0.4.AppImage`
+- `VillaSafeGateBridge-Setup.exe`
+- `VillaSafeGateBridge.dmg`
+- `VillaSafeGateBridge.AppImage`
 
-...and attaches them to the GitHub Release for tag `bridge-v1.0.4`.
+...and attaches them to the GitHub Release for the pushed tag (e.g.
+`bridge-v1.0.5`).
 
 ## Updating the bridge code
 
