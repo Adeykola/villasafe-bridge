@@ -1,0 +1,32 @@
+{
+  "name": "villasafe-gate-bridge",
+  "version": "1.0.3",
+  "description": "VillaSafe desktop bridge for turnstiles, boom barriers, tyre killers, and long-range RFID readers.",
+  "main": "electron/main.cjs",
+  "author": "VillaSafe",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "dist:win": "electron-builder --win nsis --x64",
+    "dist:mac": "electron-builder --mac dmg --x64",
+    "dist:linux": "electron-builder --linux AppImage --x64"
+  },
+  "build": {
+    "appId": "com.villasafe.gatebridge",
+    "productName": "VillaSafeGateBridge",
+    "directories": { "output": "release", "buildResources": "build" },
+    "files": ["electron/**/*", "ui/**/*", "build/**/*", "package.json"],
+    "win": { "target": ["nsis"], "icon": "build/icon.ico" },
+    "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": true, "shortcutName": "VillaSafe Gate Bridge" },
+    "mac": { "target": ["dmg"], "icon": "build/icon.icns", "category": "public.app-category.utilities" },
+    "linux": { "target": ["AppImage"], "icon": "build/icon.png", "category": "Utility" }
+  },
+  "dependencies": {
+    "modbus-serial": "^8.0.16",
+    "serialport": "^12.0.0"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  }
+}
