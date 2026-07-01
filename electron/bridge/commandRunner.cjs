@@ -115,6 +115,11 @@ function refreshRfidReaders() {
           const tag = rfidTags.find(t => t.tag_uid?.toUpperCase() === tagUid);
           const authorized = !!tag && (!tag.lane_id || tag.lane_id === lane.id);
           pendingRfidReads.push({ tagUid, laneId: lane.id, label: tag?.label, authorized });
+          // Log-only mode: record the read but never auto-open, even for known tags.
+          if (meta?.logOnly) {
+            recordEvent({ laneId: lane.id, action: 'rfid_read', source: 'rfid', success: true, details: { tagUid, label: tag?.label, logOnly: true } });
+            return;
+          }
           if (authorized) await executeLane(lane, 'open', null);
           else recordEvent({ laneId: lane.id, action: 'rfid_denied', source: 'rfid', success: false, error: 'unknown tag', details: { tagUid } });
         });

@@ -9,24 +9,30 @@ a GitHub Release. The main VillaSafe web app downloads them from
 
 1. Push this folder to `main` on `Adeykola/villasafe-bridge`.
 2. Make sure GitHub Actions is enabled (Settings → Actions → "Allow all").
-3. Verify the workflow file `.github/workflows/release.yml` is present.
+3. **Settings → Actions → General → Workflow permissions** → select
+   **"Read and write permissions"** → Save. Without this, the release job
+   cannot create the GitHub Release and the build fails with
+   `403 Resource not accessible by integration`.
+4. Verify the workflow file `.github/workflows/release.yml` is present.
 
 ## Cut a release
 
 ```bash
 # from your local clone of villasafe-bridge
-git tag bridge-v1.0.3
-git push origin bridge-v1.0.3
+git tag bridge-v1.0.4
+git push origin bridge-v1.0.4
 ```
 
 The matrix workflow then runs on Windows, macOS, and Ubuntu runners,
-produces:
+produces version-less filenames (so the VillaSafe dashboard's
+`releases/latest/download/...` links never break on a version bump):
 
-- `VillaSafeGateBridge-Setup-1.0.3.exe`
-- `VillaSafeGateBridge-1.0.3.dmg`
-- `VillaSafeGateBridge-1.0.3.AppImage`
+- `VillaSafeGateBridge-Setup.exe`
+- `VillaSafeGateBridge.dmg`
+- `VillaSafeGateBridge.AppImage`
 
-...and attaches them to the GitHub Release for tag `bridge-v1.0.3`.
+...and attaches them to the GitHub Release for the pushed tag (e.g.
+`bridge-v1.0.5`).
 
 ## Updating the bridge code
 

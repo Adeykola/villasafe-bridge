@@ -3,8 +3,9 @@ const tcp = require('./tcp.cjs');
 const modbus = require('./modbus.cjs');
 const wiegand = require('./wiegand.cjs');
 const rfid = require('./rfid.cjs');
+const hikvision = require('./hikvision.cjs');
 
-const drivers = { relay, tcp, modbus, wiegand, rfid };
+const drivers = { relay, tcp, modbus, wiegand, rfid, hikvision };
 
 async function runDriver(device, action) {
   const drv = drivers[device.driver];

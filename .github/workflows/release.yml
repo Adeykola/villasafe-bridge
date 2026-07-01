@@ -29,9 +29,8 @@ jobs:
         run: npm install
       - name: Build installer
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'false'
-        run: npm run ${{ matrix.script }}
+        run: npm run ${{ matrix.script }} -- --publish never
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
