@@ -156,24 +156,248 @@ The diagram above shows the recommended install for a typical estate gate:
 
 All relay outputs are dry contacts — polarity doesn't matter. Use 1.0 mm² or thicker cable for runs over 10 m. Use a 12V DC, minimum 2A power supply for the K2804.
 
-### Connecting the DS-K2804 to the guardhouse PC
+### Full end-to-end install: DS-K2804 + Router + Guardhouse PC
 
-1. Power the K2804 with 12V DC. Wait for the **POWER**, **RUN**, and **COMM** LEDs on the front to settle.
-2. Plug the K2804's LAN port into the same switch/router as the guardhouse PC (or connect directly with an Ethernet cable). The controller's factory-default IP is `192.0.0.64`.
-3. On the PC, temporarily set the NIC to a static IP on the same subnet, e.g. IP `192.0.0.10`, mask `255.255.255.0`. This is only for first-time reach.
-4. Download Hikvision's free **SADP Tool** (from hikvision.com) → run it → your K2804 appears in the list. Use SADP to **activate** the device by setting the admin password.
-5. Open `http://192.0.0.64` in a browser, log in as `admin` with the password from step 4.
-6. Under **Network → Basic**, change to a **static IP on your guardhouse LAN** (e.g. `192.168.1.70`, matching your router's subnet). Save and reboot the controller.
-7. Under **Network → Advanced → Integration Protocol**, enable **ISAPI** (this is how VillaSafe talks to it).
-8. Under **Door → Door Parameters**, set the **Door open duration** per door: short for turnstile/barrier (2–3 s), longer for tyre killer retraction (5–8 s).
-9. Reset the PC's NIC back to your normal LAN / DHCP settings so it can reach both the K2804 and the internet.
-10. In VillaSafe web app → **Gate Bridges → Lanes → New Lane**, run the wizard **twice**:
-    - **Lane 1 (Vehicle)**: driver **"Hikvision network controller"**, Host `192.168.1.70`, Port `80`, Username `admin`, Password (from step 4), **Door no. `1`**, Open seconds `3`.
-    - **Lane 2 (Pedestrian)**: identical settings, **Door no. `2`**, Open seconds `2`.
-11. Open the desktop bridge → **Control** tab. Hit **Open** on each lane. A green dot on the lane means ISAPI was reachable and the relay fired — you should hear the K2804 click and the connected device should trigger.
-12. If nothing happens: open **Settings → Diagnostics → Run diagnostics**. The Hikvision probe will report the exact HTTP error (401 = wrong password, timeout = wrong IP or blocked by Windows Firewall, HTTP 403 = ISAPI not enabled).
+This walks you from an unopened box to a working gate. Do the steps in order — skipping any one of them is the most common reason installs fail.
 
-> The K2804's admin password stays **only on this guardhouse PC** — it's saved in the bridge's local lane config and never uploaded to the VillaSafe cloud.
+#### A. Kit checklist (gather these first)
+
+- 1× Hikvision DS-K2804 controller (in the box)
+- 1× 12V DC power supply, minimum 2A (included with the controller)
+- 1× Wi-Fi router with at least **2 free LAN ports** (or a small 5-port unmanaged switch)
+- 3× Ethernet (Cat6) cables:
+  - Cable #1 (short, ~1 m): PC ↔ K2804 for first-time setup
+  - Cable #2: PC ↔ router (permanent)
+  - Cable #3: K2804 ↔ router (permanent)
+- 1× guardhouse PC (Windows 10 or 11, 4 GB RAM minimum), monitor, keyboard, mouse
+- 1× UPS (uninterruptible power supply) — protects K2804, router, and PC from power flicker
+- Screwdriver set, wire strippers
+- 1.0 mm² (or thicker) 2-core cable to run from K2804 relay to the boom-barrier control box
+- A multimeter (for verifying wiring — optional but strongly recommended)
+- A phone with internet to download the Hikvision SADP tool
+
+#### B. Mount and power the K2804
+
+1. Mount the K2804 **indoors**, in the guardhouse, on a wall or inside a lockable enclosure. Keep it within a few metres of the boom-barrier control box so the relay wire run is short.
+2. Connect the included 12V DC power supply:
+   - Red / `+` → `+12V` terminal on the K2804
+   - Black / `-` → `GND` terminal on the K2804
+3. Plug the PSU into a wall outlet **through the UPS**.
+4. Watch the front LEDs:
+   - **POWER** — solid on immediately
+   - **RUN** — starts blinking within ~30 seconds (heartbeat, once per second)
+   - **COMM** — will start blinking once you plug in Ethernet later
+5. If **POWER** never lights up, swap the PSU and check polarity — do not proceed.
+6. Ground the K2804's `GND` terminal to your guardhouse earth if one is available.
+
+#### C. Wire the K2804 relay to the boom-barrier control box
+
+1. Open the boom-barrier controller. Find the **dry-contact input** the manufacturer labels as **"Open"**, **"Trigger"**, or **"Manual open"**. It will be two screw terminals expecting a **momentary short** (not voltage).
+2. Run 1.0 mm² 2-core cable from the barrier controller back to the K2804.
+3. Terminate at the K2804 side:
+   - One conductor → `NO1` (Normally Open, Door 1 relay)
+   - Other conductor → `COM1` (Common, Door 1 relay)
+4. Terminate at the boom-barrier side into its "Open" input (polarity does not matter — it's a dry contact).
+5. **Verify with a multimeter** (optional but recommended):
+   - Set multimeter to continuity mode across `NO1` and `COM1`.
+   - Multimeter should read **open circuit** normally.
+   - After you complete section J and hit **Open**, the K2804 will click and continuity should briefly close.
+6. Cable runs over 10 m: use 1.5 mm² or thicker cable to avoid voltage drop.
+
+#### D. First-time direct connection: PC ↔ K2804
+
+The K2804 ships with the factory IP `192.0.0.64`. Your router almost certainly uses a different subnet (e.g. `192.168.1.x`), so you must reach the K2804 directly the first time.
+
+1. Unplug the PC from Wi-Fi and from any other Ethernet cable.
+2. Use Cable #1 (short Ethernet) to connect the K2804's LAN port directly to the PC's Ethernet port. The K2804's **COMM** LED should start blinking.
+3. Set the PC's Ethernet adapter to a static IP on the K2804's subnet:
+   - **Windows 11:** Settings → Network & internet → Ethernet → **Edit** next to "IP assignment" → choose **Manual** → toggle **IPv4 on** → enter IP `192.0.0.10`, subnet mask `255.255.255.0`, gateway blank → Save.
+   - **Windows 10:** Control Panel → Network and Sharing Center → **Change adapter settings** → right-click **Ethernet** → **Properties** → double-click **Internet Protocol Version 4 (TCP/IPv4)** → tick **Use the following IP address** → IP `192.0.0.10`, mask `255.255.255.0` → OK.
+4. Open Command Prompt and run `ping 192.0.0.64`. You should see replies. If you see "Request timed out", check the cable and that both LEDs on the Ethernet port are lit.
+
+#### E. Activate the K2804 with SADP
+
+A brand-new K2804 has **no password** — you must activate it first.
+
+1. On the same PC, open a browser to <https://www.hikvision.com/en/support/tools/hitools/> and download **SADP Tool** (Windows).
+2. Install SADP, then run it **as administrator** (right-click → "Run as administrator").
+3. Within ~20 seconds the K2804 appears in the device list with status **Inactive**.
+4. Select the K2804 (tick its checkbox). In the right-hand panel, enter a new admin password:
+   - Minimum 8 characters
+   - Must mix at least two of: uppercase, lowercase, digits, symbols
+   - Example: `Guardhouse2026!`
+5. Confirm the password and click **Activate**.
+6. **Write the password down and store it somewhere safe.** Hikvision cannot recover it — if lost, the K2804 must be factory-reset with a physical reset button.
+
+#### F. Configure the K2804 web UI
+
+1. Still on the direct PC↔K2804 connection, open Chrome or Edge and go to `http://192.0.0.64`.
+2. If the browser prompts for a plugin, install the Hikvision web plugin (only needed for live-view features — not required for VillaSafe, but harmless).
+3. Log in as `admin` with the password from step E.
+4. **Network → Basic → TCP/IP:**
+   - Uncheck **DHCP**
+   - **IPv4 Address:** `192.168.1.70` (pick any address in your router's subnet that is outside its DHCP range)
+   - **IPv4 Subnet Mask:** `255.255.255.0`
+   - **IPv4 Default Gateway:** your router's IP (usually `192.168.1.1`)
+   - **Preferred DNS Server:** `8.8.8.8`
+   - Click **Save**.
+5. **Network → Advanced → Integration Protocol** (also called **Platform Access** on some firmware): tick **Enable ISAPI**. Save.
+6. **Door → Door Parameters:**
+   - **Door 1** — Door open duration: `3` seconds (for a boom barrier)
+   - **Door 2** — Door open duration: `2` seconds (for a turnstile)
+   - **Door 3 / 4** — set later if used (5–8 seconds for tyre-killer retraction)
+   - Save each door.
+7. **Maintenance → Reboot** — reboot the controller so the new static IP takes effect. Once it reboots it is no longer at `192.0.0.64`.
+
+#### G. Set up the router
+
+1. Power the router through the UPS. Wait ~2 minutes for it to boot.
+2. Cable your ISP / modem into the router's **WAN** port (usually a different colour). Confirm the internet LED lights up.
+3. Log into the router admin page — typically `http://192.168.1.1` or `http://192.168.0.1`. Username/password is on the sticker on the underside of the router.
+4. **Confirm the router's LAN subnet matches the K2804's static IP.** If your router uses `192.168.0.x`, either:
+   - Change the router's LAN IP to `192.168.1.1` and reboot, **or**
+   - Go back to step F.4 and give the K2804 an IP like `192.168.0.70` instead.
+   - Both sides must be on the same subnet.
+5. Reserve the K2804's IP so DHCP never hands it to another device:
+   - **TP-Link:** Advanced → Network → DHCP Server → **Address Reservation** → Add → enter K2804 MAC (printed on the K2804 label) and IP `192.168.1.70`.
+   - **MikroTik:** IP → DHCP Server → Leases → find the K2804 → **Make Static**.
+   - **Generic:** look for "DHCP reservation", "Static lease", or "Address reservation".
+6. Set a strong Wi-Fi SSID and password if you plan to also use Wi-Fi.
+
+#### H. Connect PC + K2804 to the router (permanent wiring)
+
+1. Undo the temporary static IP on the PC:
+   - **Windows 11:** Settings → Network & internet → Ethernet → **Edit** → **Automatic (DHCP)** → Save.
+   - **Windows 10:** TCP/IPv4 Properties → **Obtain an IP address automatically** → OK.
+2. Unplug Cable #1 (the direct PC↔K2804 cable).
+3. Cable #2: PC → **any LAN port** on the router.
+4. Cable #3: K2804 → **any other LAN port** on the router. The K2804's **COMM** LED should blink again within 15 seconds.
+5. On the PC, open Command Prompt and verify:
+   - `ping 192.168.1.70` — should get replies from the K2804.
+   - `ping 8.8.8.8` — should get replies (means the router has internet).
+   - `http://192.168.1.70` in the browser should open the K2804 login page.
+6. If `ping 192.168.1.70` fails: unplug/replug the K2804 Ethernet cable, wait 30 s, retry. If still failing, the K2804 didn't accept the static IP — plug Cable #1 back in and redo step F.4.
+
+#### I. Install and pair the VillaSafe Bridge on the PC
+
+1. On the guardhouse PC, download `VillaSafe-GateBridge-win-x64.zip` (see section 1 at the top of this document).
+2. Extract the zip anywhere (e.g. `C:\VillaSafe\`).
+3. Double-click `GateBridge.exe`. If Windows SmartScreen warns, click **More info → Run anyway**.
+4. In the VillaSafe web app on another device: **Gate Bridges → Add Bridge** → copy the 6-digit code.
+5. In the Bridge app: **Settings** tab → paste the code → **Pair this PC**.
+6. The header status pill turns **green ("Online")** — this confirms the Bridge can reach VillaSafe's cloud.
+
+#### J. Create the lane in VillaSafe
+
+1. VillaSafe web app → **Gate Bridges → Lanes → New Lane**.
+2. Walk through the wizard:
+   - **Lane name:** `Vehicle Gate 1`
+   - **Bridge:** select the PC you just paired
+   - **Direction:** In / Out / Both, as appropriate
+   - **Boom barrier driver:** **Hikvision network controller**
+     - Host: `192.168.1.70`
+     - Port: `80`
+     - Username: `admin`
+     - Password: from step E
+     - Door no.: `1`
+     - Open seconds: `3`
+   - Turnstile / tyre killer: leave blank unless wired
+   - Auto-close time: `10` seconds (typical)
+   - Auto-open on check-in: on/off as your policy requires
+3. Save. The Bridge picks up the new lane within 5 seconds.
+
+#### K. End-to-end verification
+
+1. In the desktop Bridge → **Control** tab → click the big green **OPEN** button on the lane.
+2. You should hear a distinct **click** from the K2804 (Door 1 relay firing) and the boom barrier should lift.
+3. After ~10 seconds the barrier should auto-close (or you can hit **CLOSE** manually if you wired a close pulse).
+4. If nothing happens, open **Settings → Diagnostics → Run diagnostics** and use this table:
+
+   | Diagnostic message | Meaning | Fix |
+   |---|---|---|
+   | `HTTP 401` on Hikvision probe | Wrong password | Redo the lane, re-enter the password from step E. |
+   | `HTTP 403` on Hikvision probe | ISAPI is not enabled | Redo step F.5. |
+   | `Timeout` / `EHOSTUNREACH` | Bridge PC can't reach the K2804 | Ping test in step H.5. Check cables and static IP. |
+   | `Cloud unreachable` | PC has no internet | Check router WAN light and PC network. |
+   | K2804 clicks but barrier doesn't move | Relay fires but barrier wiring wrong | Re-check section C wiring; try continuity test with multimeter. |
+
+#### L. Pre-handover sanity checklist
+
+- [ ] All Ethernet cables and relay wires are strain-relieved (no tension on connectors).
+- [ ] K2804, router, and PC are all plugged into the **UPS**.
+- [ ] K2804 admin password is written down and stored in a sealed envelope in the estate office.
+- [ ] Router admin password is changed from the sticker default and recorded.
+- [ ] Bridge desktop app status pill is **green**.
+- [ ] At least one full **Open → auto-close** cycle observed on the physical barrier.
+- [ ] A test guest check-in in VillaSafe (if auto-open enabled) actually lifts the barrier.
+- [ ] Guards trained: they know to open lanes from **Gate Bridges → Manual Control → Open** in the web app.
+
+> The K2804's admin password stays **only on this guardhouse PC** — it's saved in the Bridge's local lane config and never uploaded to the VillaSafe cloud.
+
+### Running two (or more) DS-K2804 controllers from one bridge PC
+
+You do **not** need a second PC to run a second gate. One guardhouse PC running the Gate Bridge can drive multiple DS-K2804 controllers over the same router — wired or Wi-Fi — as long as every controller is reachable on the LAN.
+
+**Why it works.** The bridge talks to each controller over HTTP/ISAPI. Every lane in VillaSafe stores its own `Host` + `Door no.`, so one PC can address unlimited controllers.
+
+**1. IP plan.** Give each controller a unique static IP on the router's subnet:
+
+- Controller A (Gate 1, near guardhouse): `192.168.1.70`
+- Controller B (Gate 2, far side): `192.168.1.71`
+- Bridge PC: DHCP or static, same subnet.
+
+Reserve both IPs in the router's DHCP settings so they never change.
+
+**2. Bridge the physical distance (>30 m).** The DS-K2804 has **no built-in Wi-Fi** — it needs an Ethernet link. Cat6 is only rated to ~90 m and indoor Wi-Fi through walls is often unreliable past 30 m, so the far controller is always wired into some kind of network extender:
+
+| Option | When to use | Notes |
+|---|---|---|
+| **Ethernet + PoE switch** | You can run a cable | Cat6 up to 90 m; add a mid-span switch to go further. |
+| **Outdoor Wi-Fi bridge** (Ubiquiti NanoStation, TP-Link CPE) | Line-of-sight between buildings | Best for >50 m outdoor. Point-to-point; wire into each controller's LAN port. |
+| **Wi-Fi mesh node / repeater** | Router signal too weak at far gate | Place the mesh node near the far controller; plug the controller into its LAN port. |
+| **Powerline adapter (HomePlug AV2)** | Same electrical circuit reaches both gates | One adapter near the router, another at the far gate, controller into its LAN port. |
+| **Second access point in bridge/client mode** | You have a spare router | Wire the far controller into the AP's LAN port. |
+
+**3. Topology:**
+
+```text
+                                    Gate 1 (near guardhouse)
+                                    ┌────────────────────┐
+                                    │  DS-K2804 #A       │
+                                    │  192.168.1.70      │
+                                    └─────────┬──────────┘
+                                              │ Cat6 (<30 m)
+┌───────────────┐      ┌──────────┐           │
+│ Guardhouse PC │──────│  Router  │───────────┤
+│  (Bridge app) │ LAN  │  + Wi-Fi │           │
+└───────────────┘      └────┬─────┘           │  Wi-Fi bridge / powerline / mesh
+                            │                 │      (long-distance link)
+                            │       ┌─────────┴────────┐
+                            │       │  Client bridge   │
+                            │       │  or mesh node    │
+                            │       └─────────┬────────┘
+                            │                 │ Cat6 (<30 m)
+                                    ┌─────────┴──────────┐
+                                    │  DS-K2804 #B       │
+                                    │  192.168.1.71      │
+                                    │  (Gate 2, far)     │
+                                    └────────────────────┘
+```
+
+**4. VillaSafe configuration.** In the Lane Wizard, create one lane per physical gate. Same driver ("Hikvision network controller"), different Host / Door no.:
+
+- Vehicle lane, Gate 1 → Host `192.168.1.70`, Door `1`
+- Pedestrian lane, Gate 1 → Host `192.168.1.70`, Door `2`
+- Vehicle lane, Gate 2 → Host `192.168.1.71`, Door `1`
+- Pedestrian lane, Gate 2 → Host `192.168.1.71`, Door `2`
+
+**5. Verify.** In the desktop bridge → **Control** tab, hit **Open** on each lane. If a lane fails, open **Settings → Diagnostics**:
+
+- Timeout → network path broken. From the guardhouse PC run `ping 192.168.1.71` — fix Wi-Fi/powerline link first.
+- HTTP 401 → wrong password on that lane.
+- HTTP 403 → ISAPI not enabled on that controller.
+
+**Limits & tips.** One bridge PC comfortably handles 8–10 controllers (32–40 lanes). The bottleneck is network reliability, not the bridge software. Put every controller on a UPS so a brief power flicker doesn't drop your far gate.
 
 ---
 

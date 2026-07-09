@@ -7,13 +7,15 @@ const crypto = require('crypto');
 
 function md5(s) { return crypto.createHash('md5').update(s).digest('hex'); }
 
-function request(params, method, path, body) {
+function request(params, method, path, body, contentType = 'application/xml') {
   return new Promise((resolve, reject) => {
     const { host, port = 80, username = 'admin', password = '' } = params;
-    const data = body ? Buffer.from(JSON.stringify(body)) : null;
+    const data = body
+      ? Buffer.from(typeof body === 'string' ? body : JSON.stringify(body))
+      : null;
 
     const doRequest = (authHeader) => {
-      const headers = { 'Content-Type': 'application/json' };
+      const headers = { 'Content-Type': contentType };
       if (data) headers['Content-Length'] = data.length;
       if (authHeader) headers['Authorization'] = authHeader;
       const req = http.request({ host, port, method, path, headers, timeout: 4000 }, (res) => {
@@ -52,7 +54,22 @@ async function run(device, action) {
   const doorNo = parseInt(device.params.doorNo, 10) || 1;
   const cmd = action === 'open' ? 'open' : 'close';
   const path = `/ISAPI/AccessControl/RemoteControl/door/${doorNo}`;
-  await request(device.params, 'PUT', path, { RemoteControlDoor: { cmd } });
+  const xml = `<?xml version="1.0" encoding="UTF-8"?><RemoteControlDoor><cmd>${cmd}</cmd></RemoteControlDoor>`;
+  try {
+    await request(device.params, 'PUT', path, xml, 'application/xml');
+  } catch (e) {
+    if (/HTTP 400/.test(e.message)) {
+      await request(
+        device.params,
+        'PUT',
+        `${path}?format=json`,
+        JSON.stringify({ RemoteControlDoor: { cmd } }),
+        'application/json',
+      );
+    } else {
+      throw e;
+    }
+  }
 }
 
 async function probe(device) {
