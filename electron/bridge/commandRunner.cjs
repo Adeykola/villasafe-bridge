@@ -168,6 +168,21 @@ async function syncOnce(cfg) {
     status.online = true; status.lastError = null;
     status.queuedOffline = 0;
     for (const cmd of data.commands || []) {
+      // Ad-hoc probe requested by the web (Lane Wizard "Test connection")
+      if (cmd.action === 'probe_device') {
+        const dev = cmd.payload && cmd.payload.device;
+        if (!dev || !dev.driver) {
+          pendingResults.push({ commandId: cmd.id, success: false, result: { error: 'Missing device payload' } });
+          continue;
+        }
+        try {
+          const r = dev.driver === 'rfid' ? await rfid.probe(dev) : await probeDriver(dev);
+          pendingResults.push({ commandId: cmd.id, success: !!r.ok, result: r });
+        } catch (e) {
+          pendingResults.push({ commandId: cmd.id, success: false, result: { error: e.message } });
+        }
+        continue;
+      }
       const lane = lanes.find(l => l.id === cmd.lane_id);
       if (!lane) {
         pendingResults.push({ commandId: cmd.id, success: false, result: { error: 'Lane not found' } });
