@@ -106,10 +106,24 @@ function refreshRfidReaders() {
   for (const lane of lanes) {
     for (const d of (lane.devices || []).filter(x => x.driver === 'rfid')) {
       try {
+        // Inject the live allow-list (active, non-paused tags scoped to this lane or global)
+        // so unauthorised UIDs are rejected at the driver layer.
+        const laneAllow = rfidTags
+          .filter(t => t.is_active !== false && !t.paused)
+          .filter(t => !t.lane_id || t.lane_id === lane.id)
+          .map(t => String(t.tag_uid || '').toUpperCase());
+        d.params = { ...(d.params || {}), allowList: laneAllow, allowListMode: 'allow_only_listed' };
         rfid.startReader(d, async (tagUid, _dev, meta) => {
           if (meta?.blocked) {
-            pendingRfidReads.push({ tagUid, laneId: lane.id, authorized: false });
-            recordEvent({ laneId: lane.id, action: 'rfid_blocked', source: 'rfid', success: false, error: 'tag blocked by allow-list', details: { tagUid } });
+            // Distinguish "paused for debt" from "unknown/blocked"
+            const known = rfidTags.find(t => String(t.tag_uid || '').toUpperCase() === tagUid);
+            if (known && known.paused) {
+              pendingRfidReads.push({ tagUid, laneId: lane.id, label: known.label, authorized: false });
+              recordEvent({ laneId: lane.id, action: 'rfid_paused', source: 'rfid', success: false, error: known.pause_reason || 'paused', details: { tagUid, label: known.label, reason: known.pause_reason || 'paused' } });
+            } else {
+              pendingRfidReads.push({ tagUid, laneId: lane.id, authorized: false });
+              recordEvent({ laneId: lane.id, action: 'rfid_blocked', source: 'rfid', success: false, error: 'tag blocked by allow-list', details: { tagUid } });
+            }
             return;
           }
           const tag = rfidTags.find(t => t.tag_uid?.toUpperCase() === tagUid);
@@ -161,7 +175,8 @@ async function syncOnce(cfg) {
     }
     lanes = data.lanes || [];
     const newTags = data.rfidTags || [];
-    const tagsChanged = JSON.stringify(newTags.map(t => t.tag_uid).sort()) !== JSON.stringify(rfidTags.map(t => t.tag_uid).sort());
+    const sig = (arr) => JSON.stringify(arr.map(t => `${t.tag_uid}:${t.paused ? 1 : 0}:${t.lane_id || ''}`).sort());
+    const tagsChanged = sig(newTags) !== sig(rfidTags);
     rfidTags = newTags;
     if (tagsChanged || !lanes.length) refreshRfidReaders();
     Store.update({ lanesCache: lanes });
