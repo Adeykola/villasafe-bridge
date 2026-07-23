@@ -44,6 +44,12 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.0.14** — Make DS-K2804 door opening resilient across Hikvision SDK
+  firmware variants. The hardware-bridge now tries `NET_DVR_RemoteControl`
+  command `16009` with the full `NET_DVR_CONTROL_GATEWAY` payload first,
+  falls back to 1-based `NET_DVR_ControlGateway`, then tries the older
+  command `2001` DWORD payload. Logs now show the method that worked or every
+  SDK code that failed.
 - **v1.0.13** — Fix `SDK error 17 — Parameter error` on DS-K2804 door open.
   `NET_DVR_RemoteControl` command `2001` expects a 4-byte DWORD gateway
   index, not a `NET_DVR_CONTROL_GATEWAY` struct. The hardware-bridge now
