@@ -41,3 +41,9 @@ project. After changes there, run `node scripts/sync-bridge-repo.mjs`
 inside that project, copy the refreshed `bridge-repo/` contents into your
 local clone of this repo, bump `package.json` version, commit, and tag
 `bridge-vX.Y.Z`.
+
+## Release notes
+
+- **v1.0.9** — Hikvision driver now surfaces real error messages from the
+  hardware-bridge instead of `[object Object]`. Login failures, missing
+  SDK, and network timeouts each report their own code and hint.

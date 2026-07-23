@@ -11,6 +11,26 @@ const BRIDGE_HOST = process.env.VILLASAFE_BRIDGE_HOST || '127.0.0.1';
 const BRIDGE_PORT = Number(process.env.VILLASAFE_BRIDGE_PORT || 8787);
 const BRIDGE_TOKEN = process.env.VILLASAFE_BRIDGE_TOKEN || '';
 
+// Unwrap a bridge error payload — the hardware-bridge returns errors as
+// BridgeError.toJSON() objects like { code, message, hint }. A naive template
+// literal renders them as "[object Object]" and hides the real cause.
+function formatBridgeError(parsed, statusCode) {
+  if (parsed && typeof parsed === 'object') {
+    const err = parsed.error != null ? parsed.error : parsed;
+    if (typeof err === 'string') return err;
+    if (err && typeof err === 'object') {
+      const parts = [];
+      if (err.message) parts.push(String(err.message));
+      else if (parsed.message) parts.push(String(parsed.message));
+      if (err.code) parts.push(`(code: ${err.code})`);
+      if (err.hint) parts.push(`— Hint: ${err.hint}`);
+      if (parts.length) return parts.join(' ');
+    }
+    if (parsed.message) return String(parsed.message);
+  }
+  return `HTTP ${statusCode}`;
+}
+
 function bridgeHealth() {
   return new Promise((resolve) => {
     const req = http.request(
@@ -40,7 +60,12 @@ async function diagnoseBridgeFailure(originalError) {
   }
   const sdk = h.body && h.body.sdk;
   if (sdk && sdk.loaded === false) {
-    const last = sdk.lastError && (sdk.lastError.message || sdk.lastError.code);
+    const le = sdk.lastError || {};
+    const parts = [];
+    if (le.message) parts.push(String(le.message));
+    if (le.code) parts.push(`(code: ${le.code})`);
+    if (le.hint) parts.push(`— Hint: ${le.hint}`);
+    const last = parts.join(' ');
     return new Error(
       'Hardware bridge is running but HCNetSDK is not loaded. ' +
       'Copy the Hikvision SDK files into vendor/hcnetsdk/win-x64/ (see docs/SDK_INSTALL.md). ' +
@@ -75,8 +100,7 @@ function bridgeRequest(method, path, body) {
           let parsed = null;
           try { parsed = chunks ? JSON.parse(chunks) : null; } catch { parsed = { raw: chunks }; }
           if (res.statusCode >= 200 && res.statusCode < 300) return resolve(parsed);
-          const msg = (parsed && (parsed.error || parsed.message)) || `HTTP ${res.statusCode}`;
-          reject(new Error(`hardware-bridge: ${msg}`));
+          reject(new Error(`hardware-bridge: ${formatBridgeError(parsed, res.statusCode)}`));
         });
       },
     );
