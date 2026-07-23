@@ -44,6 +44,11 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.0.11** — Fix `Expected 2 arguments, got 1` crash during Hikvision
+  controller login. The koffi FFI calls now pass the required count
+  argument to `koffi.alloc`, and any future SDK marshalling error is
+  surfaced as a `LOGIN_FAILED` with SDK context instead of a bare
+  `INTERNAL`.
 - **v1.0.10** — Fix `HTTP 400` from hardware-bridge on controller upsert.
   The bridge REST layer now accepts slug controller IDs (e.g.
   `hik-192-168-1-64`) in addition to UUIDs, matching what the desktop
