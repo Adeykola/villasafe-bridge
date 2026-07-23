@@ -44,6 +44,10 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.0.10** — Fix `HTTP 400` from hardware-bridge on controller upsert.
+  The bridge REST layer now accepts slug controller IDs (e.g.
+  `hik-192-168-1-64`) in addition to UUIDs, matching what the desktop
+  Hikvision driver sends.
 - **v1.0.9** — Hikvision driver now surfaces real error messages from the
   hardware-bridge instead of `[object Object]`. Login failures, missing
   SDK, and network timeouts each report their own code and hint.
