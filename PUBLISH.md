@@ -44,6 +44,11 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.0.13** — Fix `SDK error 17 — Parameter error` on DS-K2804 door open.
+  `NET_DVR_RemoteControl` command `2001` expects a 4-byte DWORD gateway
+  index, not a `NET_DVR_CONTROL_GATEWAY` struct. The hardware-bridge now
+  sends the correct 4-byte payload. Close is treated as best-effort (DS-K
+  controllers auto-close after dwell) and no longer surfaces red failures.
 - **v1.0.12** — Fix `SDK error 11 — Device is not supported.` when opening
   or closing a door on DS-K2804 (and other DS-K access-control panels).
   The hardware-bridge now uses `NET_DVR_RemoteControl` with command
