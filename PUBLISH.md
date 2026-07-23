@@ -44,6 +44,12 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.0.12** — Fix `SDK error 11 — Device is not supported.` when opening
+  or closing a door on DS-K2804 (and other DS-K access-control panels).
+  The hardware-bridge now uses `NET_DVR_RemoteControl` with command
+  `NET_DVR_REMOTE_OPEN_DOOR (2001)` and a `NET_DVR_CONTROL_GATEWAY`
+  payload, which is the supported path on access controllers.
+  `NET_DVR_ControlGateway` (NVR/DVR-only) is no longer called.
 - **v1.0.11** — Fix `Expected 2 arguments, got 1` crash during Hikvision
   controller login. The koffi FFI calls now pass the required count
   argument to `koffi.alloc`, and any future SDK marshalling error is
