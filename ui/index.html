@@ -1,317 +1,912 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
   <meta charset="utf-8" />
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' 'unsafe-inline'; font-src 'self'" />
   <title>VillaSafe Gate Bridge</title>
   <style>
-    :root { --primary:#3B82F6; --accent:#F59E0B; --slate:#334155; --bg:#0F172A;
-            --green:#16a34a; --red:#dc2626; }
-    * { box-sizing: border-box; }
-    body { margin:0; font-family: -apple-system, Segoe UI, Roboto, sans-serif;
-           background:#f8fafc; color:#0f172a; min-height:100vh; }
-    header { background:var(--bg); color:white; padding:14px 24px;
-             display:flex; justify-content:space-between; align-items:center; gap:16px; }
-    .brand { display:flex; align-items:center; gap:10px; }
-    .brand img { height:32px; width:32px; }
-    .brand h1 { margin:0; font-size:17px; }
-    nav { display:flex; gap:6px; }
-    nav button { background:transparent; color:#cbd5e1; border:1px solid #334155;
-                 padding:8px 18px; border-radius:8px; cursor:pointer; font-size:13px; }
-    nav button.active { background:var(--primary); color:white; border-color:var(--primary); }
-    .status { font-size:12px; padding:4px 10px; border-radius:999px; background:#1e293b; color:white; }
-    .status.online { background:var(--green); }
-    .status.offline { background:#475569; }
-    main { padding:24px; max-width:1100px; margin:0 auto; }
-    .page { display:none; }
-    .page.active { display:block; }
-    .card { background:white; border:1px solid #e2e8f0; border-radius:12px;
-            padding:20px; margin-bottom:16px; }
-    .card h2 { margin:0 0 12px; font-size:16px; color:var(--slate); }
-    button.primary { background:var(--primary); color:white; border:0;
-                     padding:10px 16px; border-radius:8px; cursor:pointer; font-size:14px; }
-    button.secondary { background:#e2e8f0; color:#0f172a; border:0;
-                       padding:10px 16px; border-radius:8px; cursor:pointer; font-size:14px; }
-    input { padding:10px; border:1px solid #cbd5e1; border-radius:8px; width:100%;
-            font-size:14px; font-family:inherit; }
-    label { display:block; font-size:12px; color:#64748b; margin-bottom:4px; }
-    .row { display:grid; grid-template-columns:1fr 1fr; gap:12px; margin-bottom:12px; }
-    .pill { font-size:11px; padding:2px 8px; border-radius:999px; background:#e2e8f0; }
-    .log { font-family: ui-monospace, monospace; font-size:12px; max-height:240px;
-           overflow:auto; background:#0f172a; color:#94a3b8; padding:12px; border-radius:8px; }
-    .log .ok { color:#22c55e; }
-    .log .err { color:#ef4444; }
+    @font-face {
+      font-family: 'Inter';
+      src: url('fonts/Inter-latin.woff2') format('woff2');
+      font-weight: 400 800;
+      font-display: swap;
+    }
 
-    /* Control page — big touch buttons */
-    .lane-card { background:white; border:1px solid #e2e8f0; border-radius:16px;
-                 padding:24px; margin-bottom:20px; box-shadow:0 1px 3px rgba(0,0,0,.04); }
-    .lane-head { display:flex; justify-content:space-between; align-items:center;
-                 margin-bottom:18px; flex-wrap:wrap; gap:8px; }
-    .lane-name { font-size:22px; font-weight:700; color:var(--bg); }
-    .lane-devices { font-size:13px; color:#64748b; display:flex; gap:14px; flex-wrap:wrap; }
-    .big-buttons { display:grid; grid-template-columns:1fr 1fr; gap:18px; }
-    .big-btn { font-size:28px; font-weight:700; padding:42px 16px; border:0;
-               border-radius:14px; cursor:pointer; color:white; letter-spacing:.5px;
-               transition:transform .05s ease, box-shadow .2s ease;
-               box-shadow:0 4px 12px rgba(0,0,0,.12); }
-    .big-btn:hover { box-shadow:0 8px 18px rgba(0,0,0,.18); }
-    .big-btn:active { transform:translateY(1px); }
-    .big-btn.open { background:var(--green); }
-    .big-btn.close { background:var(--red); }
-    .big-btn:disabled { background:#cbd5e1; cursor:not-allowed; box-shadow:none; }
-    .empty { text-align:center; padding:60px 20px; color:#64748b; }
-    .empty h3 { margin:0 0 8px; color:#0f172a; }
+    :root {
+      --bg: #060a14;
+      --panel: #0c1322;
+      --panel-2: #111a2e;
+      --line: #1b2742;
+      --line-soft: #141e34;
+      --text: #eaf0fa;
+      --muted: #8a96b0;
+      --faint: #56627d;
+      --blue: #4c86d6;
+      --blue-deep: #3b72b9;
+      --amber: #f4af1f;
+      --open: #1fbf68;
+      --open-deep: #148a4b;
+      --close: #e5484d;
+      --close-deep: #a8262b;
+      --ease: cubic-bezier(0.16, 1, 0.3, 1);
+      --mono: ui-monospace, 'Cascadia Mono', Consolas, 'SF Mono', monospace;
+      color-scheme: dark;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { height: 100%; }
+    body {
+      margin: 0;
+      font-family: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      background: var(--bg);
+      color: var(--text);
+      -webkit-font-smoothing: antialiased;
+      overflow: hidden;
+    }
+    button { font: inherit; color: inherit; }
+    :focus-visible { outline: 2px solid var(--blue); outline-offset: 2px; }
+    .num { font-variant-numeric: tabular-nums; }
+    [hidden] { display: none !important; }
+
+    /* ---------- Shell ---------- */
+    .shell { display: grid; grid-template-columns: 84px 1fr; height: 100%; }
+    .rail {
+      display: flex; flex-direction: column; align-items: center; gap: 6px;
+      padding: 18px 0; background: #050810; border-right: 1px solid var(--line-soft);
+    }
+    .rail-logo { width: 42px; height: 42px; border-radius: 12px; margin-bottom: 18px; }
+    .rail-btn {
+      position: relative; width: 64px; padding: 10px 0 8px; border: 0; border-radius: 14px;
+      background: transparent; color: var(--faint); cursor: pointer;
+      display: flex; flex-direction: column; align-items: center; gap: 5px;
+      font-size: 10.5px; font-weight: 600; letter-spacing: .02em;
+      transition: color .2s var(--ease), background .2s var(--ease);
+    }
+    .rail-btn svg { width: 22px; height: 22px; }
+    .rail-btn:hover { color: var(--text); background: var(--panel); }
+    .rail-btn.active { color: var(--text); background: var(--panel-2); }
+    .rail-btn.active::before {
+      content: ''; position: absolute; left: -10px; top: 14px; bottom: 14px; width: 3px;
+      border-radius: 3px; background: var(--amber);
+    }
+    .rail-btn .badge {
+      position: absolute; top: 4px; right: 10px; min-width: 16px; height: 16px; padding: 0 4px;
+      border-radius: 8px; background: var(--amber); color: #1a1204; font-size: 10px; font-weight: 800;
+      display: grid; place-items: center;
+    }
+    .rail-spacer { flex: 1; }
+    .rail-version { font-size: 10px; color: var(--faint); font-family: var(--mono); }
+
+    .main { display: flex; flex-direction: column; min-width: 0; height: 100%; }
+    .topbar {
+      display: flex; align-items: center; gap: 18px; padding: 16px 28px;
+      border-bottom: 1px solid var(--line-soft);
+    }
+    .estate { min-width: 0; flex: 1; }
+    .estate-label { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+    .estate-name { font-size: 20px; font-weight: 800; letter-spacing: -.02em; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .chips { display: flex; gap: 8px; flex-wrap: wrap; justify-content: flex-end; }
+    .chip {
+      display: inline-flex; align-items: center; gap: 8px; padding: 7px 12px; border-radius: 999px;
+      background: var(--panel); border: 1px solid var(--line); font-size: 12.5px; font-weight: 600; white-space: nowrap;
+    }
+    .chip .muted { color: var(--muted); font-weight: 500; }
+    .clock { font-size: 26px; font-weight: 700; letter-spacing: -.02em; color: var(--text); padding-left: 6px; }
+    .clock small { font-size: 12px; color: var(--muted); font-weight: 600; margin-left: 4px; }
+
+    .dot { position: relative; width: 8px; height: 8px; border-radius: 50%; background: var(--faint); flex: none; }
+    .dot.ok { background: var(--open); }
+    .dot.warn { background: var(--amber); }
+    .dot.bad { background: var(--close); }
+    .dot.ok::after, .dot.warn::after {
+      content: ''; position: absolute; inset: 0; border-radius: 50%; background: inherit;
+      animation: ping 2.2s var(--ease) infinite;
+    }
+    @keyframes ping { 0% { transform: scale(1); opacity: .6; } 80%, 100% { transform: scale(2.8); opacity: 0; } }
+
+    .content { flex: 1; overflow-y: auto; padding: 26px 28px 40px; }
+    .page { display: none; }
+    .page.active { display: block; animation: pageIn .45s var(--ease) both; }
+    #page-pair.active { display: flex; min-height: 100%; }
+    #page-pair .pair { margin: auto; width: 100%; }
+    @keyframes pageIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+
+    .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
+    .page-title { margin: 0; font-size: 30px; font-weight: 800; letter-spacing: -.035em; line-height: 1.05; }
+    .page-sub { margin: 6px 0 0; color: var(--muted); font-size: 14px; max-width: 60ch; }
+
+    /* ---------- Banner ---------- */
+    .banner {
+      display: flex; gap: 12px; align-items: flex-start; padding: 14px 16px; border-radius: 14px; margin-bottom: 18px;
+      background: rgba(244, 175, 31, .08); border: 1px solid rgba(244, 175, 31, .35); color: #f8d99a; font-size: 13.5px;
+    }
+    .banner svg { width: 20px; height: 20px; flex: none; color: var(--amber); margin-top: 1px; }
+    .banner strong { color: #fff3d6; }
+
+    /* ---------- Lanes ---------- */
+    .lanes { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 18px; }
+    .lane {
+      background: linear-gradient(180deg, var(--panel-2), var(--panel));
+      border: 1px solid var(--line); border-radius: 22px; padding: 22px;
+      animation: rise .6s var(--ease) both;
+    }
+    @keyframes rise { from { opacity: 0; transform: translateY(16px) scale(.985); } to { opacity: 1; transform: none; } }
+    .lane-top { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; margin-bottom: 14px; }
+    .lane-name { font-size: 24px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+    .lane-last { margin-top: 5px; font-size: 12.5px; color: var(--muted); min-height: 1.2em; }
+    .lane-last.ok { color: #7ee2a8; }
+    .lane-last.err { color: #ff9a9d; }
+    .devices { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 18px; }
+    .device {
+      display: inline-flex; align-items: center; gap: 7px; padding: 5px 10px; border-radius: 8px;
+      background: rgba(255,255,255,.035); border: 1px solid var(--line-soft); font-size: 12px; color: #c4cde0;
+    }
+    .device .kind { color: var(--faint); text-transform: capitalize; }
+    .device.none { color: var(--faint); }
+
+    .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+    .act {
+      position: relative; overflow: hidden; border: 0; border-radius: 18px; cursor: pointer;
+      padding: 30px 14px 26px; display: flex; flex-direction: column; align-items: center; gap: 8px;
+      color: #fff; font-size: 26px; font-weight: 800; letter-spacing: .06em;
+      transition: transform .18s var(--ease), opacity .2s var(--ease), filter .2s var(--ease);
+      box-shadow: inset 0 1px 0 rgba(255,255,255,.18), 0 10px 28px -12px rgba(0,0,0,.7);
+    }
+    .act small { font-size: 11.5px; font-weight: 600; letter-spacing: .04em; opacity: .75; }
+    .act svg { width: 30px; height: 30px; }
+    .act.open { background: linear-gradient(180deg, var(--open), var(--open-deep)); }
+    .act.close { background: linear-gradient(180deg, var(--close), var(--close-deep)); }
+    .act:hover { filter: brightness(1.08); }
+    .act:active { transform: scale(.975); }
+    .act:disabled { cursor: progress; opacity: .6; }
+    .act .ring {
+      position: absolute; inset: 0; border-radius: inherit; border: 3px solid rgba(255,255,255,.85);
+      opacity: 0; pointer-events: none;
+    }
+    .act.flash .ring { animation: ring .7s var(--ease); }
+    @keyframes ring { from { opacity: .9; transform: scale(.94); } to { opacity: 0; transform: scale(1.06); } }
+    .act.failed { animation: shake .45s var(--ease); }
+    @keyframes shake { 20% { transform: translateX(-6px); } 40% { transform: translateX(5px); } 60% { transform: translateX(-3px); } 80% { transform: translateX(2px); } }
+    .spin { width: 22px; height: 22px; border-radius: 50%; border: 3px solid rgba(255,255,255,.35); border-top-color: #fff; animation: spin .8s linear infinite; }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ---------- Empty / pairing ---------- */
+    .hero-empty {
+      display: grid; place-items: center; text-align: center; padding: 70px 20px; border: 1px dashed var(--line);
+      border-radius: 22px; color: var(--muted);
+    }
+    .hero-empty h3 { margin: 0 0 8px; color: var(--text); font-size: 20px; letter-spacing: -.02em; }
+    .hero-empty p { margin: 0; max-width: 46ch; }
+
+    .pair {
+      min-height: 100%; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; align-items: center;
+      max-width: 1040px; margin: 0 auto; padding: 20px 0;
+    }
+    .pair-eyebrow { color: var(--amber); font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
+    .pair-title { margin: 12px 0 14px; font-size: clamp(34px, 4.4vw, 54px); font-weight: 800; letter-spacing: -.045em; line-height: .98; }
+    .pair-title span { color: var(--blue); }
+    .pair-steps { list-style: none; padding: 0; margin: 22px 0 0; display: grid; gap: 12px; color: var(--muted); font-size: 14px; }
+    .pair-steps li { display: grid; grid-template-columns: 28px 1fr; gap: 10px; align-items: start; }
+    .pair-steps b {
+      width: 24px; height: 24px; border-radius: 8px; background: var(--panel-2); border: 1px solid var(--line);
+      display: grid; place-items: center; color: var(--text); font-size: 12px;
+    }
+    .pair-card {
+      background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid var(--line);
+      border-radius: 26px; padding: 30px; box-shadow: 0 40px 80px -40px rgba(0,0,0,.8);
+      animation: rise .7s var(--ease) .08s both;
+    }
+    .pair-card h3 { margin: 0 0 4px; font-size: 18px; letter-spacing: -.02em; }
+    .pair-card p { margin: 0 0 20px; color: var(--muted); font-size: 13.5px; }
+    .digits { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin-bottom: 18px; }
+    .digits input {
+      width: 100%; aspect-ratio: 4 / 5; text-align: center; font-size: 30px; font-weight: 800; font-family: var(--mono);
+      background: var(--bg); color: var(--text); border: 1px solid var(--line); border-radius: 14px;
+      transition: border-color .2s var(--ease), transform .2s var(--ease);
+    }
+    .digits input:focus { outline: none; border-color: var(--blue); transform: translateY(-2px); }
+    .digits input.filled { border-color: #2a4675; }
+    .estate-confirm {
+      padding: 18px; border-radius: 16px; background: var(--bg); border: 1px solid var(--line); margin-bottom: 18px;
+    }
+    .estate-confirm .label { font-size: 11px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+    .estate-confirm .name { font-size: 22px; font-weight: 800; letter-spacing: -.02em; margin: 6px 0 4px; }
+    .estate-confirm .meta { color: var(--muted); font-size: 13px; }
+
+    /* ---------- Buttons ---------- */
+    .btn {
+      display: inline-flex; align-items: center; justify-content: center; gap: 8px; border: 0; cursor: pointer;
+      padding: 11px 18px; border-radius: 12px; font-weight: 700; font-size: 13.5px;
+      transition: transform .15s var(--ease), filter .2s var(--ease), background .2s var(--ease);
+    }
+    .btn svg { width: 16px; height: 16px; }
+    .btn:active { transform: scale(.97); }
+    .btn:disabled { opacity: .55; cursor: not-allowed; }
+    .btn.primary { background: var(--blue); color: #fff; }
+    .btn.primary:hover { filter: brightness(1.1); }
+    .btn.ghost { background: var(--panel-2); border: 1px solid var(--line); color: var(--text); }
+    .btn.ghost:hover { background: #16213a; }
+    .btn.danger { background: transparent; border: 1px solid rgba(229, 72, 77, .5); color: #ff9a9d; }
+    .btn.danger.armed { background: var(--close); border-color: var(--close); color: #fff; }
+    .btn.block { width: 100%; padding: 14px 18px; font-size: 15px; }
+    .row-btns { display: flex; gap: 10px; flex-wrap: wrap; }
+
+    /* ---------- Panels (settings / diagnostics) ---------- */
+    .grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(360px, 1fr)); gap: 18px; align-items: start; }
+    .panel { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 22px; animation: rise .55s var(--ease) both; }
+    .panel + .panel { animation-delay: .06s; }
+    .panel h3 { margin: 0; font-size: 16px; letter-spacing: -.01em; }
+    .panel .desc { margin: 4px 0 16px; color: var(--muted); font-size: 13px; }
+    .kv { display: grid; grid-template-columns: auto 1fr; gap: 10px 18px; font-size: 13.5px; margin-bottom: 16px; }
+    .kv dt { color: var(--muted); }
+    .kv dd { margin: 0; text-align: right; font-weight: 600; }
+    .field label { display: block; font-size: 12px; font-weight: 600; color: var(--muted); margin-bottom: 6px; }
+    .field input {
+      width: 100%; padding: 11px 13px; border-radius: 12px; border: 1px solid var(--line); background: var(--bg);
+      color: var(--text); font: inherit; font-family: var(--mono); font-size: 13px;
+    }
+    .field input:focus { outline: none; border-color: var(--blue); }
+    .inline { display: flex; gap: 10px; align-items: end; }
+    .inline .field { flex: 1; }
+
+    .lan-hero { display: flex; align-items: baseline; gap: 10px; margin: 6px 0 4px; }
+    .lan-hero .big { font-size: 44px; font-weight: 800; letter-spacing: -.04em; line-height: 1; }
+    .lan-hero .unit { color: var(--muted); font-weight: 600; }
+    .status-line { display: flex; align-items: center; gap: 8px; font-size: 13px; font-weight: 600; margin-bottom: 16px; }
+
+    .checks { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+    .check {
+      display: grid; grid-template-columns: 26px 1fr; gap: 10px; padding: 12px 14px; border-radius: 12px;
+      background: var(--bg); border: 1px solid var(--line-soft); animation: rise .45s var(--ease) both;
+    }
+    .check .mark { width: 22px; height: 22px; border-radius: 7px; display: grid; place-items: center; font-weight: 800; font-size: 12px; }
+    .check.ok .mark { background: rgba(31, 191, 104, .14); color: var(--open); }
+    .check.fail .mark { background: rgba(229, 72, 77, .14); color: var(--close); }
+    .check .title { font-weight: 600; }
+    .check .hint { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+    .check.fail { border-color: rgba(229, 72, 77, .3); }
+    .section-label { margin: 22px 0 10px; font-size: 11px; font-weight: 800; letter-spacing: .14em; text-transform: uppercase; color: var(--faint); }
+
+    pre.logs {
+      margin: 0; max-height: 320px; overflow: auto; padding: 14px; border-radius: 12px; background: #04070e;
+      border: 1px solid var(--line-soft); color: #8e9bb6; font-family: var(--mono); font-size: 12px; line-height: 1.55; white-space: pre-wrap;
+    }
+
+    /* ---------- Activity ---------- */
+    .feed { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+    .feed li {
+      display: grid; grid-template-columns: 78px 4px 1fr auto; gap: 14px; align-items: center;
+      padding: 12px 14px; border-radius: 12px; background: var(--panel); border: 1px solid var(--line-soft);
+      animation: slideIn .45s var(--ease) both;
+    }
+    @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: none; } }
+    .feed .time { font-family: var(--mono); font-size: 12px; color: var(--muted); }
+    .feed .bar { width: 4px; height: 26px; border-radius: 2px; background: var(--faint); }
+    .feed li.ok .bar { background: var(--open); }
+    .feed li.err .bar { background: var(--close); }
+    .feed li.info .bar { background: var(--blue); }
+    .feed .what { font-weight: 600; }
+    .feed .why { color: var(--muted); font-size: 12.5px; margin-top: 2px; }
+    .feed .src { font-size: 11px; color: var(--faint); text-transform: uppercase; letter-spacing: .08em; font-weight: 700; }
+    .pill {
+      display: inline-flex; align-items: center; gap: 6px; padding: 6px 11px; border-radius: 999px;
+      font-size: 12.5px; font-weight: 600; background: var(--panel-2); border: 1px solid var(--line); color: var(--muted);
+    }
+    .pill.ok { color: #7ee2a8; border-color: rgba(31,191,104,.35); background: rgba(31,191,104,.08); }
+    .pill.bad { color: #ff9a9d; border-color: rgba(229,72,77,.4); background: rgba(229,72,77,.08); }
+
+    /* ---------- Toasts ---------- */
+    .toasts { position: fixed; right: 22px; bottom: 22px; display: grid; gap: 8px; z-index: 50; }
+    .toast {
+      min-width: 260px; max-width: 380px; padding: 12px 16px; border-radius: 14px; background: #15203a;
+      border: 1px solid var(--line); box-shadow: 0 20px 40px -18px rgba(0,0,0,.8); font-size: 13.5px; font-weight: 600;
+      display: flex; gap: 10px; align-items: center; animation: toastIn .4s var(--ease) both;
+    }
+    .toast.ok { border-color: rgba(31,191,104,.45); }
+    .toast.err { border-color: rgba(229,72,77,.5); }
+    .toast.out { animation: toastOut .3s var(--ease) both; }
+    @keyframes toastIn { from { opacity: 0; transform: translateY(12px) scale(.97); } to { opacity: 1; transform: none; } }
+    @keyframes toastOut { to { opacity: 0; transform: translateY(8px); } }
+
+    @media (max-width: 980px) {
+      .pair { grid-template-columns: 1fr; gap: 28px; }
+      .lanes { grid-template-columns: 1fr; }
+      .clock { display: none; }
+    }
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; }
+    }
   </style>
 </head>
 <body>
-  <header>
-    <div class="brand">
-      <img src="logo.png" alt="VillaSafe" />
-      <h1>VillaSafe Gate Bridge</h1>
-    </div>
-    <nav>
-      <button id="navControl" class="active" data-target="control">Control</button>
-      <button id="navSettings" data-target="settings">Settings</button>
+  <div class="shell">
+    <nav class="rail" aria-label="Sections">
+      <img class="rail-logo" src="logo.png" alt="VillaSafe" />
+      <button class="rail-btn active" data-page="gates" title="Gates">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M13 4h3a2 2 0 0 1 2 2v14"/><path d="M2 20h3"/><path d="M13 20h9"/><path d="M10 12v.01"/><path d="M13 4.562v16.157a1 1 0 0 1-1.242.97L5 20V5.562a2 2 0 0 1 1.515-1.94l4-1A2 2 0 0 1 13 4.561Z"/></svg>
+        Gates
+      </button>
+      <button class="rail-btn" data-page="activity" title="Activity">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+        Activity
+        <span class="badge" id="activityBadge" hidden>0</span>
+      </button>
+      <button class="rail-btn" data-page="offline" title="Offline scanning">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6.01 18H6"/><path d="M10.01 18H10"/><path d="M15 10v4"/><path d="M17.84 7.17a4 4 0 0 0-5.66 0"/><path d="M20.66 4.34a8 8 0 0 0-11.31 0"/></svg>
+        Offline
+      </button>
+      <button class="rail-btn" data-page="health" title="Health check">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
+        Health
+      </button>
+      <button class="rail-btn" data-page="settings" title="Settings">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M21 4h-7"/><path d="M10 4H3"/><path d="M21 12h-9"/><path d="M8 12H3"/><path d="M21 20h-5"/><path d="M12 20H3"/><path d="M14 2v4"/><path d="M8 10v4"/><path d="M16 18v4"/></svg>
+        Settings
+      </button>
+      <div class="rail-spacer"></div>
+      <span class="rail-version" id="version"></span>
     </nav>
-    <span id="statusPill" class="status offline">Disconnected</span>
-  </header>
 
-  <main>
-    <!-- ============ CONTROL PAGE ============ -->
-    <section id="page-control" class="page active">
-      <div id="lanes"></div>
-      <div id="noLanes" class="empty">
-        <h3>No lanes available yet</h3>
-        <p>Pair this bridge in <strong>Settings</strong>, then configure lanes in VillaSafe → Gate Bridges → Lanes.</p>
-      </div>
-    </section>
+    <div class="main">
+      <header class="topbar">
+        <div class="estate">
+          <div class="estate-label">VillaSafe Gate Bridge</div>
+          <div class="estate-name" id="estateName">Not paired</div>
+        </div>
+        <div class="chips">
+          <span class="chip" id="connChip"><span class="dot" id="connDot"></span><span id="connText">Not paired</span></span>
+          <span class="chip" id="lanChip" hidden><span class="dot" id="lanDot"></span><span id="lanText"></span></span>
+          <span class="chip" id="queueChip" hidden><span class="num" id="queueText">0</span><span class="muted">waiting to sync</span></span>
+        </div>
+        <div class="clock num" id="clock"></div>
+      </header>
 
-    <!-- ============ SETTINGS PAGE ============ -->
-    <section id="page-settings" class="page">
-      <div class="card" id="pairCard">
-        <h2>1. Pair with estate</h2>
-        <p style="font-size:13px; color:#64748b;">In VillaSafe → Gate Bridges, click "Add Bridge" and enter the 6-digit code below.</p>
+      <main class="content">
+        <!-- ============ PAIRING (shown until paired) ============ -->
+        <section class="page" id="page-pair">
+          <div class="pair">
+            <div>
+              <div class="pair-eyebrow">Set up this gate PC</div>
+              <h1 class="pair-title">Connect this gate to <span>your estate.</span></h1>
+              <p class="page-sub">Once paired, guards can open every lane from here, and phones on the estate network can scan straight through this PC — even when the internet is down.</p>
+              <ol class="pair-steps">
+                <li><b>1</b><span>In VillaSafe, open <strong>Gate Bridges</strong> and click <strong>Add bridge</strong>.</span></li>
+                <li><b>2</b><span>Type the 6-digit code it shows into the boxes here.</span></li>
+                <li><b>3</b><span>Check the estate name, then confirm.</span></li>
+              </ol>
+            </div>
 
-        <!-- Wizard Step 1: enter code -->
-        <div id="wizStep1">
-          <div class="row">
-            <div><label>Pairing code</label><input id="pairCode" maxlength="6" placeholder="123456" /></div>
-            <div style="align-self:end;"><button class="primary" id="lookupBtn">Look up estate</button></div>
+            <div class="pair-card">
+              <div id="pairStep1">
+                <h3>Enter your pairing code</h3>
+                <p>The code is valid for a few minutes. Ask for a new one if it has expired.</p>
+                <div class="digits" id="digits">
+                  <input inputmode="numeric" maxlength="1" aria-label="Digit 1" id="d0" />
+                  <input inputmode="numeric" maxlength="1" aria-label="Digit 2" id="d1" />
+                  <input inputmode="numeric" maxlength="1" aria-label="Digit 3" id="d2" />
+                  <input inputmode="numeric" maxlength="1" aria-label="Digit 4" id="d3" />
+                  <input inputmode="numeric" maxlength="1" aria-label="Digit 5" id="d4" />
+                  <input inputmode="numeric" maxlength="1" aria-label="Digit 6" id="d5" />
+                </div>
+                <button class="btn primary block" id="lookupBtn" disabled>Find my estate</button>
+              </div>
+
+              <div id="pairStep2" hidden>
+                <h3>Is this the right estate?</h3>
+                <p>This PC will control the gates listed below.</p>
+                <div class="estate-confirm">
+                  <div class="label">Estate</div>
+                  <div class="name" id="confirmEstate"></div>
+                  <div class="meta" id="confirmMeta"></div>
+                </div>
+                <div class="row-btns">
+                  <button class="btn primary" id="confirmPairBtn" style="flex:1">Yes, pair this PC</button>
+                  <button class="btn ghost" id="cancelPairBtn">Back</button>
+                </div>
+              </div>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <!-- Wizard Step 2: confirm estate -->
-        <div id="wizStep2" style="display:none;">
-          <div style="background:#f1f5f9; padding:14px; border-radius:8px;">
-            <p style="margin:0 0 6px; font-size:12px; color:#64748b;">You are about to pair with</p>
-            <p style="margin:0; font-size:18px; font-weight:700;" id="wizEstateName"></p>
-            <p style="margin:6px 0 0; font-size:13px; color:#64748b;" id="wizLanes"></p>
+        <!-- ============ GATES ============ -->
+        <section class="page" id="page-gates">
+          <div class="page-head">
+            <div>
+              <h2 class="page-title">Gates</h2>
+              <p class="page-sub">Open or close any lane. Buttons work even with no internet — actions sync when it's back.</p>
+            </div>
           </div>
-          <div style="margin-top:12px; display:flex; gap:8px;">
-            <button class="primary" id="confirmPairBtn">Confirm & pair</button>
-            <button class="secondary" id="cancelPairBtn">Cancel</button>
+          <div id="offlineBanner"></div>
+          <div class="lanes" id="lanes"></div>
+          <div class="hero-empty" id="noLanes" hidden>
+            <div>
+              <h3>No lanes on this bridge yet</h3>
+              <p>Add lanes in VillaSafe → Gate Bridges → Lanes. They'll appear here within a few seconds.</p>
+            </div>
           </div>
-        </div>
+        </section>
 
-        <!-- Wizard Step 3: connected -->
-        <div id="wizStep3" style="display:none;">
-          <p style="margin:0; color:#16a34a;">✅ Paired with <strong id="wizPaired"></strong></p>
-        <p style="font-size:12px; color:#64748b;" id="wizHeartbeat">Verifying heartbeat…</p>
-          <button class="secondary" id="unpairBtn" style="margin-top:8px;">Unpair</button>
-        </div>
-      </div>
+        <!-- ============ ACTIVITY ============ -->
+        <section class="page" id="page-activity">
+          <div class="page-head">
+            <div>
+              <h2 class="page-title">Activity</h2>
+              <p class="page-sub">Everything this PC did since it was opened. The full record is kept in a tamper-proof log.</p>
+            </div>
+            <div class="row-btns">
+              <span class="pill" id="verifyOut">Log not checked</span>
+              <button class="btn ghost" id="verifyLogBtn">Check log integrity</button>
+            </div>
+          </div>
+          <ul class="feed" id="feed"></ul>
+          <div class="hero-empty" id="feedEmpty">
+            <div>
+              <h3>Nothing yet</h3>
+              <p>Gate openings, scans and schedule runs will show up here as they happen.</p>
+            </div>
+          </div>
+        </section>
 
-      <div class="card">
-        <h2>2. Diagnostics</h2>
-        <button class="primary" id="diagBtn">Run diagnostics</button>
-        <button class="secondary" id="copyDiag" style="margin-left:8px;">Copy report</button>
-        <span class="pill" id="queuePill" style="margin-left:8px;">Queue: 0</span>
-        <div id="diagOut" class="log" style="margin-top:12px; display:none;"></div>
-      </div>
+        <!-- ============ OFFLINE / LAN ============ -->
+        <section class="page" id="page-offline">
+          <div class="page-head">
+            <div>
+              <h2 class="page-title">Offline scanning</h2>
+              <p class="page-sub">This PC keeps a copy of your estate's valid guest passes, so phones on the estate network can scan through it and open the gate with no internet.</p>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="panel">
+              <h3>Pass list on this PC</h3>
+              <div class="lan-hero"><span class="big num" id="lanPasses">0</span><span class="unit">passes ready</span></div>
+              <div class="status-line"><span class="dot" id="lanStateDot"></span><span id="lanState">Waiting for the first pass list</span></div>
+              <dl class="kv">
+                <dt>Last updated</dt><dd id="lanSynced">—</dd>
+                <dt>Scans waiting to upload</dt><dd class="num" id="lanPending">0</dd>
+                <dt>Secure key</dt><dd id="lanKey">—</dd>
+              </dl>
+            </div>
+            <div class="panel">
+              <h3>Connecting guard phones</h3>
+              <p class="desc">Guard phones find this PC automatically when they're on the same Wi-Fi or network cable as it. Nothing to type in.</p>
+              <dl class="kv">
+                <dt>Network port</dt><dd class="num" id="lanPort">8787</dd>
+                <dt>Works from</dt><dd>VillaSafe Android and iPhone apps</dd>
+              </dl>
+              <p class="desc" style="margin-bottom:0">If phones can't reach this PC, allow <strong>VillaSafe Gate Bridge</strong> through Windows Firewall on private networks. Windows usually asks the first time the app opens.</p>
+            </div>
+          </div>
+        </section>
 
-      <div class="card">
-        <h2>3. Advanced — Gateway URL</h2>
-        <p style="font-size:12px; color:#64748b;">Only change this if your IT team tells you to. The bridge uses the VillaSafe gateway and never needs backend keys.</p>
-        <div class="row">
-          <div><label>Gateway URL</label><input id="gatewayUrl" placeholder="https://villasafe.com/bridge" /></div>
-          <div style="align-self:end;"><button class="secondary" id="saveGatewayBtn">Save</button></div>
-        </div>
-      </div>
+        <!-- ============ HEALTH ============ -->
+        <section class="page" id="page-health">
+          <div class="page-head">
+            <div>
+              <h2 class="page-title">Health check</h2>
+              <p class="page-sub">Tests the internet connection, VillaSafe, and every gate device on this PC. Send the report to support if something fails.</p>
+            </div>
+            <div class="row-btns">
+              <button class="btn ghost" id="copyDiag" disabled>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                Copy report
+              </button>
+              <button class="btn primary" id="diagBtn">Run health check</button>
+            </div>
+          </div>
+          <div id="diagOut">
+            <div class="hero-empty">
+              <div>
+                <h3>Not run yet</h3>
+                <p>Takes about ten seconds. Gates keep working while it runs.</p>
+              </div>
+            </div>
+          </div>
+        </section>
 
-      <div class="card">
-        <h2>4. Activity log</h2>
-        <div style="display:flex; gap:8px; margin-bottom:8px;">
-          <button class="secondary" id="verifyLogBtn">Verify integrity</button>
-          <span class="pill" id="verifyOut">—</span>
-        </div>
-        <div class="log" id="log"></div>
-      </div>
-    </section>
-  </main>
+        <!-- ============ SETTINGS ============ -->
+        <section class="page" id="page-settings">
+          <div class="page-head">
+            <div>
+              <h2 class="page-title">Settings</h2>
+              <p class="page-sub">Most estates never need to change anything here.</p>
+            </div>
+          </div>
+          <div class="grid-2">
+            <div class="panel">
+              <h3>Estate connection</h3>
+              <p class="desc" id="heartbeat">Checking connection…</p>
+              <dl class="kv">
+                <dt>Estate</dt><dd id="setEstate">—</dd>
+                <dt>Connected through</dt><dd id="setGateway">—</dd>
+              </dl>
+              <button class="btn danger" id="unpairBtn">Unpair this PC</button>
+            </div>
+            <div class="panel">
+              <h3>Gateway address</h3>
+              <p class="desc">Only change this if VillaSafe support asks you to. The bridge never needs any passwords or keys.</p>
+              <div class="inline">
+                <div class="field">
+                  <label for="gatewayUrl">Gateway URL</label>
+                  <input id="gatewayUrl" placeholder="https://villasafe.com/bridge" spellcheck="false" />
+                </div>
+                <button class="btn ghost" id="saveGatewayBtn">Save</button>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div class="toasts" id="toasts" aria-live="polite"></div>
 
   <script>
     const $ = (id) => document.getElementById(id);
-    const logEl = $('log');
-    function log(msg, cls='') {
-      const t = new Date().toLocaleTimeString();
-      logEl.innerHTML = `<div class="${cls}">[${t}] ${msg}</div>` + logEl.innerHTML;
+    const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+    const ICON_OPEN = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m18 15-6-6-6 6"/></svg>';
+    const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
+
+    let paired = false;
+    let currentPage = null;
+    let laneSignature = '';
+    let unseenActivity = 0;
+    const lastAction = {}; // laneId -> { ok, text, at }
+
+    // ---------- Toasts ----------
+    function toast(message, kind = '') {
+      const el = document.createElement('div');
+      el.className = `toast ${kind}`;
+      el.innerHTML = `<span class="dot ${kind === 'ok' ? 'ok' : kind === 'err' ? 'bad' : ''}"></span><span>${esc(message)}</span>`;
+      $('toasts').appendChild(el);
+      setTimeout(() => { el.classList.add('out'); setTimeout(() => el.remove(), 300); }, 3200);
     }
 
-    // ---- Nav ----
-    document.querySelectorAll('nav button').forEach(btn => {
+    // ---------- Navigation ----------
+    function show(page) {
+      currentPage = page;
+      document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === `page-${page}`));
+      document.querySelectorAll('.rail-btn').forEach((b) => b.classList.toggle('active', b.dataset.page === page));
+      if (page === 'activity') { unseenActivity = 0; updateBadge(); }
+    }
+    document.querySelectorAll('.rail-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
-        document.querySelectorAll('nav button').forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
-        $('page-' + btn.dataset.target).classList.add('active');
+        if (!paired && btn.dataset.page !== 'health') return show('pair');
+        show(btn.dataset.page);
       });
     });
 
-    async function refresh() {
-      const cfg = await window.bridge.getConfig();
-      if ($('gatewayUrl') && !$('gatewayUrl').matches(':focus')) {
-        $('gatewayUrl').value = cfg.gatewayUrl || '';
-      }
-      if (cfg.bridgeId) {
-        $('wizStep1').style.display = 'none';
-        $('wizStep2').style.display = 'none';
-        $('wizStep3').style.display = 'block';
-        $('wizPaired').textContent = cfg.tenantName || 'estate';
-      }
-      const status = await window.bridge.status();
-      $('queuePill').textContent = `Queue: ${status.queuedOffline || 0}`;
-      const pill = $('statusPill');
-      if (!cfg.bridgeId) {
-        pill.textContent = 'Not paired'; pill.className = 'status offline';
-      } else if (status.online === false) {
-        pill.textContent = 'Offline'; pill.className = 'status offline';
-        if ($('wizHeartbeat')) {
-          $('wizHeartbeat').innerHTML = '<span style="color:#dc2626;">⚠ Heartbeat failing:</span> '
-            + (status.lastError || 'no response').replace(/</g,'&lt;')
-            + '<br/><span style="color:#94a3b8;">Auto-retrying every 5s. If this persists, click Unpair and re-pair with a fresh code.</span>';
-        }
-      } else {
-        pill.textContent = 'Online'; pill.className = 'status online';
-        $('wizHeartbeat').textContent = `Heartbeat OK — connected through ${status.gateway || 'VillaSafe gateway'}`;
-      }
-      const healthByKey = {};
-      (status.deviceHealth || []).forEach(h => { healthByKey[`${h.lane_id}:${h.device_index}`] = h; });
-      if (status.lanes?.length) {
-        $('noLanes').style.display = 'none';
-        const offlineBanner = status.online === false
-          ? `<div style="background:#fef3c7; border:1px solid #fbbf24; color:#92400e; padding:10px 14px; border-radius:8px; margin-bottom:14px; font-size:13px;">⚠️ Offline — commands run locally and will sync (${status.queuedOffline||0} queued).</div>`
-          : '';
-        $('lanes').innerHTML = offlineBanner + status.lanes.map(l => `
-          <div class="lane-card">
-            <div class="lane-head">
-              <div class="lane-name">${l.name}
-                <span class="status ${status.online ? 'online' : 'offline'}" style="margin-left:8px; font-size:11px;">${status.online ? 'Online' : 'Offline'}</span>
-              </div>
-              <div class="lane-devices">
-                ${(l.devices||[]).map((d,i) => {
-                  const h = healthByKey[`${l.id}:${i}`];
-                  const dot = h?.status === 'online' ? '🟢' : h?.status === 'error' ? '🔴' : '⚪';
-                  return `<span>${dot} ${d.name}</span>`;
-                }).join('') || '<span style="color:#94a3b8;">No devices configured</span>'}
-              </div>
-            </div>
-            <div class="big-buttons">
-              <button class="big-btn open" data-id="${l.id}" data-act="open">OPEN</button>
-              <button class="big-btn close" data-id="${l.id}" data-act="close">CLOSE</button>
-            </div>
-          </div>
-        `).join('');
-        document.querySelectorAll('.big-btn').forEach(btn => {
-          btn.addEventListener('click', async () => {
-            btn.disabled = true;
-            const r = await window.bridge.runLocal(btn.dataset.id, btn.dataset.act);
-            log(`${btn.dataset.act.toUpperCase()} → ${r.ok ? 'OK' : 'FAIL '+r.error}`, r.ok?'ok':'err');
-            setTimeout(() => { btn.disabled = false; }, 800);
-          });
-        });
-      } else {
-        $('noLanes').style.display = 'block';
-        $('lanes').innerHTML = '';
-      }
+    // ---------- Clock ----------
+    function tick() {
+      const d = new Date();
+      const hm = d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      $('clock').innerHTML = `${esc(hm)}<small>${esc(d.toLocaleDateString([], { weekday: 'short', day: 'numeric', month: 'short' }))}</small>`;
+    }
+    tick(); setInterval(tick, 15000);
+
+    const ago = (iso) => {
+      if (!iso) return 'never';
+      const s = Math.max(0, Math.round((Date.now() - new Date(iso).getTime()) / 1000));
+      if (s < 60) return 'just now';
+      if (s < 3600) return `${Math.round(s / 60)} min ago`;
+      if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+      return `${Math.round(s / 86400)} days ago`;
+    };
+
+    // ---------- Activity feed ----------
+    const feed = [];
+    const LABELS = { open: 'Gate opened', close: 'Gate closed', schedule: 'Schedule ran', 'lan-scan': 'Phone scan', scan: 'Scan', rfid: 'Tag read', anpr: 'Plate read' };
+    const KINDS = { anpr: 'plate camera', barrier: 'barrier', turnstile: 'turnstile', controller: 'door controller', relay: 'relay', rfid: 'tag reader' };
+    function describe(action, success = true) {
+      if (!action) return 'Bridge event';
+      const [base, device] = String(action).split(':');
+      let label = LABELS[base] || base.replace(/[-_]/g, ' ').replace(/^\w/, (c) => c.toUpperCase());
+      if (!success && (base === 'open' || base === 'close')) label = `Couldn't ${base}`;
+      return device ? `${label} · ${KINDS[device] || device}` : label;
+    }
+    function addFeed(item) {
+      feed.unshift({ ...item, at: new Date() });
+      if (feed.length > 200) feed.pop();
+      if (currentPage !== 'activity') { unseenActivity++; updateBadge(); }
+      renderFeed();
+    }
+    function updateBadge() {
+      const b = $('activityBadge');
+      b.hidden = unseenActivity === 0;
+      b.textContent = unseenActivity > 99 ? '99+' : String(unseenActivity);
+    }
+    function renderFeed() {
+      $('feedEmpty').hidden = feed.length > 0;
+      $('feed').innerHTML = feed.map((f, i) => `
+        <li class="${f.kind}" style="animation-delay:${i === 0 ? 0 : 0}ms">
+          <span class="time">${esc(f.at.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }))}</span>
+          <span class="bar"></span>
+          <div><div class="what">${esc(f.what)}</div>${f.why ? `<div class="why">${esc(f.why)}</div>` : ''}</div>
+          <span class="src">${esc(f.src || '')}</span>
+        </li>`).join('');
     }
 
-    let lastDiag = null;
-    $('diagBtn').onclick = async () => {
-      $('diagOut').style.display = 'block';
-      $('diagOut').textContent = 'Running…';
-      lastDiag = await window.bridge.diagnose();
-      const stepLines = lastDiag.steps.map(s => `${s.ok ? '✓' : '✗'} ${s.label}${s.ok ? '' : '\n   → ' + s.hint}`).join('\n');
-      const devLines = lastDiag.devices.map(d => `${d.ok ? '✓' : '✗'} ${d.lane} / ${d.device} (${d.driver}) — ${d.message}${d.ok ? '' : '\n   → ' + d.hint}`).join('\n');
-      $('diagOut').textContent = `Host: ${lastDiag.host} (${lastDiag.platform}/${lastDiag.arch})\n\nSteps:\n${stepLines}\n\nDevices:\n${devLines || '(no devices configured)'}\n\nRecent logs:\n${(lastDiag.logs||[]).slice(-30).join('\n')}`;
+    // ---------- Lanes ----------
+    function laneHtml(l, i) {
+      const devices = (l.devices || []).map((d, idx) => `
+        <span class="device" data-dev="${esc(l.id)}:${idx}"><span class="dot"></span>${esc(d.name)}${d.kind ? ` <span class="kind">${esc(KINDS[d.kind] || d.kind)}</span>` : ''}</span>`).join('')
+        || '<span class="device none">No devices set up on this lane</span>';
+      return `
+        <article class="lane" style="animation-delay:${i * 70}ms">
+          <div class="lane-top">
+            <div>
+              <div class="lane-name">${esc(l.name)}</div>
+              <div class="lane-last" data-last="${esc(l.id)}"></div>
+            </div>
+          </div>
+          <div class="devices">${devices}</div>
+          <div class="actions">
+            <button class="act open" data-id="${esc(l.id)}" data-act="open" data-name="${esc(l.name)}"><span class="ring"></span>${ICON_OPEN}OPEN<small>Lift barrier</small></button>
+            <button class="act close" data-id="${esc(l.id)}" data-act="close" data-name="${esc(l.name)}"><span class="ring"></span>${ICON_CLOSE}CLOSE<small>Lower barrier</small></button>
+          </div>
+        </article>`;
+    }
+
+    async function runAction(btn) {
+      const { id, act, name } = btn.dataset;
+      const original = btn.innerHTML;
+      btn.disabled = true;
+      btn.classList.remove('flash', 'failed');
+      btn.innerHTML = '<span class="ring"></span><span class="spin"></span>' + (act === 'open' ? 'OPENING' : 'CLOSING');
+      const t0 = performance.now();
+      let r;
+      try { r = await window.bridge.runLocal(id, act); } catch (e) { r = { ok: false, error: e?.message || 'No response' }; }
+      const ms = Math.round(performance.now() - t0);
+      btn.innerHTML = original;
+      void btn.offsetWidth;
+      btn.classList.add(r.ok ? 'flash' : 'failed');
+      lastAction[id] = { ok: r.ok, text: r.ok ? `${act === 'open' ? 'Opened' : 'Closed'} · ${ms} ms` : `Didn't ${act}: ${r.error || 'unknown error'}`, at: Date.now() };
+      paintLastActions();
+      addFeed({ kind: r.ok ? 'ok' : 'err', what: `${name} — ${act === 'open' ? 'opened' : 'closed'} from this PC`, why: r.ok ? `${ms} ms` : r.error, src: 'Guard' });
+      if (!r.ok) toast(`${name}: ${r.error || 'the gate did not respond'}`, 'err');
+      setTimeout(() => { btn.disabled = false; }, 700);
+    }
+
+    function paintLastActions() {
+      document.querySelectorAll('[data-last]').forEach((el) => {
+        const a = lastAction[el.dataset.last];
+        if (!a) { el.textContent = 'Ready'; el.className = 'lane-last'; return; }
+        const secs = Math.round((Date.now() - a.at) / 1000);
+        el.textContent = `${a.text} · ${secs < 5 ? 'just now' : secs < 60 ? `${secs}s ago` : `${Math.round(secs / 60)} min ago`}`;
+        el.className = `lane-last ${a.ok ? 'ok' : 'err'}`;
+      });
+    }
+    setInterval(paintLastActions, 5000);
+
+    function renderLanes(status) {
+      const lanes = status.lanes || [];
+      const sig = JSON.stringify(lanes.map((l) => [l.id, l.name, (l.devices || []).map((d) => [d.name, d.kind])]));
+      $('noLanes').hidden = lanes.length > 0;
+      if (sig !== laneSignature) {
+        laneSignature = sig;
+        $('lanes').innerHTML = lanes.map(laneHtml).join('');
+        document.querySelectorAll('.act').forEach((b) => b.addEventListener('click', () => runAction(b)));
+        paintLastActions();
+      }
+      const health = {};
+      (status.deviceHealth || []).forEach((h) => { health[`${h.lane_id}:${h.device_index}`] = h; });
+      document.querySelectorAll('[data-dev]').forEach((el) => {
+        const h = health[el.dataset.dev];
+        el.querySelector('.dot').className = `dot ${h?.status === 'online' ? 'ok' : h?.status === 'error' ? 'bad' : ''}`;
+        el.title = h?.status === 'error' ? (h.last_error || 'Device error') : h?.status === 'online' ? 'Responding' : 'Not checked yet';
+      });
+      $('offlineBanner').innerHTML = status.online === false ? `
+        <div class="banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 20h.01"/><path d="M8.5 16.429a5 5 0 0 1 7 0"/><path d="M5 12.859a10 10 0 0 1 5.17-2.69"/><path d="M19 12.859a10 10 0 0 0-2.007-1.523"/><path d="M2 8.82a15 15 0 0 1 4.177-2.643"/><path d="M22 8.82a15 15 0 0 0-11.288-3.764"/><path d="m2 2 20 20"/></svg>
+          <div><strong>No internet right now.</strong> The buttons still work and phones on the estate network can still scan. ${status.queuedOffline ? `${status.queuedOffline} action${status.queuedOffline === 1 ? '' : 's'} will upload when the connection returns.` : ''}</div>
+        </div>` : '';
+    }
+
+    // ---------- Status refresh ----------
+    async function refresh() {
+      let cfg, status;
+      try {
+        cfg = await window.bridge.getConfig();
+        status = await window.bridge.status();
+      } catch { return; }
+
+      const wasPaired = paired;
+      paired = !!cfg.bridgeId;
+      $('estateName').textContent = paired ? (cfg.tenantName || 'Your estate') : 'Not paired';
+      $('setEstate').textContent = cfg.tenantName || '—';
+      $('setGateway').textContent = status.gateway || 'VillaSafe gateway';
+      if (!$('gatewayUrl').matches(':focus')) $('gatewayUrl').value = cfg.gatewayUrl || '';
+
+      if (!paired) {
+        if (currentPage !== 'health') show('pair');
+      } else if (!wasPaired && (currentPage === 'pair' || !document.querySelector('.page.active'))) {
+        show('gates');
+      }
+
+      // Connection chip
+      const online = paired && status.online !== false;
+      $('connDot').className = `dot ${!paired ? '' : online ? 'ok' : 'bad'}`;
+      $('connText').textContent = !paired ? 'Not paired' : online ? 'Online' : 'No internet';
+      $('heartbeat').innerHTML = !paired ? 'Not paired yet.' : online
+        ? `<span style="color:#7ee2a8">Connected.</span> Checking in with VillaSafe every few seconds.`
+        : `<span style="color:#ff9a9d">Can't reach VillaSafe:</span> ${esc(status.lastError || 'no response')}. Retrying every 5 seconds. If this lasts more than a few minutes, unpair and pair again with a new code.`;
+
+      // Offline queue chip
+      const q = status.queuedOffline || 0;
+      $('queueChip').hidden = !paired || q === 0;
+      $('queueText').textContent = q;
+
+      // LAN chip + page
+      const lan = status.lan || {};
+      const lanReady = !!lan.hasKey && (lan.passes > 0 || !!lan.passesAt);
+      $('lanChip').hidden = !paired;
+      $('lanDot').className = `dot ${lanReady ? (lan.stale ? 'warn' : 'ok') : ''}`;
+      $('lanText').textContent = lanReady ? `${lan.passes} passes offline` : 'Offline scanning not ready';
+      $('lanPasses').textContent = lan.passes || 0;
+      $('lanStateDot').className = `dot ${lanReady ? (lan.stale ? 'warn' : 'ok') : ''}`;
+      $('lanState').textContent = !lanReady ? 'Waiting for the first pass list from VillaSafe'
+        : lan.stale ? 'Pass list is out of date — scans are still allowed but flagged for the estate office'
+        : 'Ready — phones can scan through this PC';
+      $('lanSynced').textContent = ago(lan.passesAt);
+      $('lanPending').textContent = lan.pendingScans || 0;
+      $('lanKey').textContent = lan.hasKey ? 'Received' : 'Not yet';
+      $('lanPort').textContent = lan.port || 8787;
+
+      if (paired) renderLanes(status);
+    }
+
+    // ---------- Pairing ----------
+    const digits = [...document.querySelectorAll('#digits input')];
+    const code = () => digits.map((d) => d.value).join('');
+    const syncDigits = () => {
+      digits.forEach((d) => d.classList.toggle('filled', !!d.value));
+      $('lookupBtn').disabled = code().length !== 6;
     };
-    $('copyDiag').onclick = () => {
-      if (!lastDiag) return log('Run diagnostics first', 'err');
-      navigator.clipboard.writeText(JSON.stringify(lastDiag, null, 2));
-      log('Diagnostics copied to clipboard', 'ok');
-    };
+    digits.forEach((input, i) => {
+      input.addEventListener('input', () => {
+        input.value = input.value.replace(/\D/g, '').slice(-1);
+        if (input.value && i < 5) digits[i + 1].focus();
+        syncDigits();
+      });
+      input.addEventListener('keydown', (e) => {
+        if (e.key === 'Backspace' && !input.value && i > 0) digits[i - 1].focus();
+        if (e.key === 'Enter' && code().length === 6) $('lookupBtn').click();
+      });
+      input.addEventListener('paste', (e) => {
+        const text = (e.clipboardData.getData('text') || '').replace(/\D/g, '').slice(0, 6);
+        if (!text) return;
+        e.preventDefault();
+        digits.forEach((d, j) => { d.value = text[j] || ''; });
+        digits[Math.min(text.length, 5)].focus();
+        syncDigits();
+      });
+    });
 
     let pendingCode = null;
     $('lookupBtn').onclick = async () => {
-      const code = $('pairCode').value.trim();
-      if (code.length !== 6) return log('Code must be 6 digits', 'err');
-      $('lookupBtn').disabled = true;
-      $('lookupBtn').textContent = 'Checking gateway…';
+      const c = code();
+      if (c.length !== 6) return;
+      const btn = $('lookupBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin" style="width:16px;height:16px;border-width:2px"></span> Finding your estate…';
       let r;
-      try {
-        r = await window.bridge.previewPair(code);
-      } finally {
-        $('lookupBtn').disabled = false;
-        $('lookupBtn').textContent = 'Look up estate';
-      }
-      if (!r.ok) return log('Lookup failed: ' + r.error, 'err');
-      pendingCode = code;
+      try { r = await window.bridge.previewPair(c); } catch (e) { r = { ok: false, error: e?.message }; }
+      btn.textContent = 'Find my estate';
+      syncDigits();
+      if (!r.ok) return toast(`That code didn't work: ${r.error || 'check it and try again'}`, 'err');
+      pendingCode = c;
       const p = r.preview;
-      $('wizEstateName').textContent = p.tenantName + ' (Bridge: ' + p.bridgeName + ')';
-      $('wizLanes').textContent = p.lanes.length
-        ? `Controlling ${p.lanes.length} lane(s): ` + p.lanes.map(l => `${l.name} [${l.deviceCount} dev]`).join(', ')
-        : 'No lanes configured yet — you can add them in the web app after pairing.';
-      $('wizStep1').style.display = 'none';
-      $('wizStep2').style.display = 'block';
+      $('confirmEstate').textContent = p.tenantName;
+      $('confirmMeta').textContent = `Bridge "${p.bridgeName}" · ` + (p.lanes.length
+        ? `${p.lanes.length} lane${p.lanes.length === 1 ? '' : 's'}: ${p.lanes.map((l) => l.name).join(', ')}`
+        : 'no lanes yet — add them in VillaSafe after pairing');
+      $('pairStep1').hidden = true;
+      $('pairStep2').hidden = false;
     };
     $('cancelPairBtn').onclick = () => {
       pendingCode = null;
-      $('wizStep2').style.display = 'none';
-      $('wizStep1').style.display = 'block';
+      $('pairStep2').hidden = true;
+      $('pairStep1').hidden = false;
     };
     $('confirmPairBtn').onclick = async () => {
       if (!pendingCode) return;
-      const r = await window.bridge.pair(pendingCode);
-      if (r.ok) {
-        log('Paired with ' + r.tenantName, 'ok');
-        $('wizStep2').style.display = 'none';
-        $('wizStep3').style.display = 'block';
-        $('wizPaired').textContent = r.tenantName;
-        refresh();
-      } else log('Pair failed: ' + r.error, 'err');
+      const btn = $('confirmPairBtn');
+      btn.disabled = true;
+      let r;
+      try { r = await window.bridge.pair(pendingCode); } catch (e) { r = { ok: false, error: e?.message }; }
+      btn.disabled = false;
+      if (!r.ok) return toast(`Pairing failed: ${r.error || 'try a new code'}`, 'err');
+      toast(`Paired with ${r.tenantName}`, 'ok');
+      addFeed({ kind: 'info', what: `Paired with ${r.tenantName}`, src: 'Setup' });
+      pendingCode = null;
+      $('pairStep2').hidden = true;
+      $('pairStep1').hidden = false;
+      digits.forEach((d) => { d.value = ''; });
+      syncDigits();
+      await refresh();
+      show('gates');
     };
 
+    let unpairArmed = null;
     $('unpairBtn').onclick = async () => {
+      const btn = $('unpairBtn');
+      if (!unpairArmed) {
+        btn.classList.add('armed');
+        btn.textContent = 'Click again to unpair';
+        unpairArmed = setTimeout(() => { unpairArmed = null; btn.classList.remove('armed'); btn.textContent = 'Unpair this PC'; }, 4000);
+        return;
+      }
+      clearTimeout(unpairArmed);
       await window.bridge.unpair();
-      log('Unpaired', '');
       location.reload();
     };
 
-    $('verifyLogBtn').onclick = async () => {
-      const r = await window.bridge.verifyLog();
-      $('verifyOut').textContent = r.ok ? '✓ ' + r.message : '✗ tampered at #' + r.brokenAt + ' (' + r.reason + ')';
-      $('verifyOut').style.background = r.ok ? '#dcfce7' : '#fecaca';
+    // ---------- Health check ----------
+    let lastDiag = null;
+    $('diagBtn').onclick = async () => {
+      const btn = $('diagBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin" style="width:16px;height:16px;border-width:2px"></span> Checking…';
+      try { lastDiag = await window.bridge.diagnose(); } catch (e) { toast(`Health check failed: ${e?.message || e}`, 'err'); }
+      btn.disabled = false;
+      btn.textContent = 'Run again';
+      if (!lastDiag) return;
+      $('copyDiag').disabled = false;
+      const row = (ok, title, hint, i) => `
+        <li class="check ${ok ? 'ok' : 'fail'}" style="animation-delay:${i * 40}ms">
+          <span class="mark">${ok ? '✓' : '!'}</span>
+          <div><div class="title">${esc(title)}</div>${!ok && hint ? `<div class="hint">${esc(hint)}</div>` : ''}</div>
+        </li>`;
+      const steps = (lastDiag.steps || []).map((s, i) => row(s.ok, s.label, s.hint, i)).join('');
+      const devs = (lastDiag.devices || []).map((d, i) => row(d.ok, `${d.lane} · ${d.device} (${d.driver}) — ${d.message}`, d.hint, i)).join('');
+      const failed = [...(lastDiag.steps || []), ...(lastDiag.devices || [])].filter((x) => !x.ok).length;
+      $('diagOut').innerHTML = `
+        <div class="banner" style="${failed ? '' : 'background:rgba(31,191,104,.08);border-color:rgba(31,191,104,.35);color:#b8f0cf'}">
+          <div><strong style="color:inherit">${failed ? `${failed} problem${failed === 1 ? '' : 's'} found.` : 'Everything is working.'}</strong>
+          Checked on ${esc(lastDiag.host)} (${esc(lastDiag.platform)}/${esc(lastDiag.arch)}).</div>
+        </div>
+        <div class="section-label">Connection</div>
+        <ul class="checks">${steps}</ul>
+        <div class="section-label">Gate devices</div>
+        ${devs ? `<ul class="checks">${devs}</ul>` : '<p class="page-sub">No devices set up yet.</p>'}
+        <div class="section-label">Recent log</div>
+        <pre class="logs">${esc((lastDiag.logs || []).slice(-40).join('\n') || 'No log lines yet.')}</pre>`;
+    };
+    $('copyDiag').onclick = async () => {
+      if (!lastDiag) return;
+      await navigator.clipboard.writeText(JSON.stringify(lastDiag, null, 2));
+      toast('Report copied — paste it into your message to support', 'ok');
     };
 
-    window.bridge.onEvent((evt) => {
-      log(`${evt.action} (${evt.source||'bridge'}) ${evt.success?'✓':'✗ '+(evt.error||'')}`, evt.success?'ok':'err');
-      refresh();
-    });
+    // ---------- Log integrity ----------
+    $('verifyLogBtn').onclick = async () => {
+      const r = await window.bridge.verifyLog();
+      const out = $('verifyOut');
+      out.className = `pill ${r.ok ? 'ok' : 'bad'}`;
+      out.textContent = r.ok ? `✓ ${r.message}` : `Changed at entry #${r.brokenAt} (${r.reason})`;
+    };
 
+    // ---------- Gateway ----------
     $('saveGatewayBtn').onclick = async () => {
       const url = $('gatewayUrl').value.trim();
       const r = await window.bridge.setGateway(url);
-      log(r.ok ? 'Gateway saved: ' + url : 'Gateway save failed: ' + r.error, r.ok ? 'ok' : 'err');
+      toast(r.ok ? 'Gateway saved' : `Couldn't save: ${r.error}`, r.ok ? 'ok' : 'err');
       if (r.ok) refresh();
     };
+
+    // ---------- Live events from the bridge ----------
+    window.bridge.onEvent((evt) => {
+      addFeed({
+        kind: evt.success ? 'ok' : 'err',
+        what: describe(evt.action, evt.success) + (evt.details?.device ? ` — ${evt.details.device}` : ''),
+        why: evt.success ? (evt.details?.latencyMs ? `${evt.details.latencyMs} ms` : (typeof evt.details === 'string' ? evt.details : '')) : (evt.error || 'Failed'),
+        src: evt.source || 'Bridge',
+      });
+      refresh();
+    });
+
+    if (window.bridge.version) window.bridge.version().then((v) => { $('version').textContent = v ? `v${v}` : ''; }).catch(() => {});
+
 
     refresh();
     setInterval(refresh, 5000);

@@ -3,8 +3,21 @@ const path = require('path');
 const Store = require('./config/laneStore.cjs');
 const {
   startBridge, stopBridge, getStatus,
-  runCommandLocal, runDeviceLocal, getLanes, refreshDeviceHealth,
+  runCommandLocal, runDeviceLocal, getLanes, refreshDeviceHealth, isOnline,
 } = require('./bridge/commandRunner.cjs');
+const lanGate = require('./bridge/lanGate.cjs');
+const { BRIDGE_VERSION } = require('./bridge/pairing.cjs');
+
+/** Local network API so guard devices can scan and open lanes without internet. */
+function startLanGate(cfg) {
+  lanGate.start(cfg, {
+    getLanes,
+    openLane: runCommandLocal,
+    isOnline,
+    version: BRIDGE_VERSION,
+    onEvent: (evt) => win?.webContents.send('bridge:event', evt),
+  });
+}
 const { pairWithCode } = require('./bridge/pairing.cjs');
 const { previewPairing } = require('./bridge/pairing.cjs');
 const signedLog = require('./bridge/signedLog.cjs');
@@ -17,8 +30,13 @@ let win;
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1100,
-    height: 760,
+    width: 1180,
+    height: 800,
+    minWidth: 880,
+    minHeight: 620,
+    backgroundColor: '#060a14',
+    autoHideMenuBar: true,
+    title: 'VillaSafe Gate Bridge',
     icon: path.join(__dirname, '..', 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.cjs'),
@@ -35,6 +53,7 @@ app.whenReady().then(async () => {
   if (store.bridgeId && store.tenantId && store.bridgeToken) {
     startBridge(store, (evt) => win?.webContents.send('bridge:event', evt));
     startAnprServer(store, 8765, (evt) => win?.webContents.send('bridge:event', evt));
+    startLanGate(store);
     scheduler.start(getLanes, runCommandLocal, (m) => { diagnostics.log(m); win?.webContents.send('bridge:event', { action: 'schedule', success: true, details: m }); });
   }
 });
@@ -71,9 +90,11 @@ ipcMain.handle('bridge:pair', async (_e, { code }) => {
     });
     startBridge(Store.load(), (evt) => win?.webContents.send('bridge:event', evt));
     startAnprServer(Store.load(), 8765, (evt) => win?.webContents.send('bridge:event', evt));
+    startLanGate(Store.load());
   }
   return result;
 });
+ipcMain.handle('app:version', () => app.getVersion());
 ipcMain.handle('bridge:status', () => getStatus());
 ipcMain.handle('bridge:runLocal', async (_e, { laneId, action }) => runCommandLocal(laneId, action));
 ipcMain.handle('bridge:runDevice', async (_e, { laneId, deviceIndex, action }) => runDeviceLocal(laneId, deviceIndex, action));
@@ -89,6 +110,7 @@ ipcMain.handle('bridge:tailLog', (_e, n) => signedLog.tail(n || 200));
 ipcMain.handle('bridge:publicKey', () => signedLog.publicKey());
 ipcMain.handle('bridge:unpair', () => {
   stopBridge();
+  lanGate.stop();
   scheduler.stop();
   Store.update({ bridgeId: null, tenantId: null, bridgeToken: null, pairingCode: null, tokenExpiresAt: null });
   return Store.load();

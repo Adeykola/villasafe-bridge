@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('bridge', {
+  version: () => ipcRenderer.invoke('app:version'),
   getConfig: () => ipcRenderer.invoke('config:get'),
   setGateway: (gatewayUrl) => ipcRenderer.invoke('config:setGateway', { gatewayUrl }),
   previewPair: (code) => ipcRenderer.invoke('bridge:previewPair', { code }),

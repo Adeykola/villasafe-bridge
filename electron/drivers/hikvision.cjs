@@ -134,10 +134,16 @@ async function ensureController(params) {
   return id;
 }
 
-async function run(device, action) {
+function doorNoFor(params, side) {
+  // Turnstiles wired as one lane with two rotors: entryDoorNo / exitDoorNo.
+  const sided = side === 'exit' ? params.exitDoorNo : side === 'entry' ? params.entryDoorNo : undefined;
+  return parseInt(sided, 10) || parseInt(params.doorNo, 10) || 1;
+}
+
+async function run(device, action, opts = {}) {
   try {
     const params = device.params || {};
-    const doorNo = parseInt(params.doorNo, 10) || 1;
+    const doorNo = doorNoFor(params, opts.side);
     const controllerId = await ensureController(params);
     const path = action === 'open' ? '/api/door/open' : '/api/door/close';
     await bridgeRequest('POST', path, { controllerId, doorNo });
@@ -161,4 +167,4 @@ async function probe(device) {
   }
 }
 
-module.exports = { run, probe };
+module.exports = { run, probe, bridgeRequest, controllerIdFor, ensureController, doorNoFor };

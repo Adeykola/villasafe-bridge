@@ -14,9 +14,15 @@ async function pulse(params, value) {
   await new Promise((res) => port.close(() => res()));
 }
 
-async function run(device, action) {
-  if (action === 'open') return pulse(device.params, true);
-  if (action === 'close') return pulse(device.params, false);
+function paramsForSide(params, side) {
+  const channel = side === 'exit' ? params.exitChannel : side === 'entry' ? params.entryChannel : undefined;
+  return channel ? { ...params, channel } : params;
+}
+
+async function run(device, action, opts = {}) {
+  const params = paramsForSide(device.params || {}, opts.side);
+  if (action === 'open') return pulse(params, true);
+  if (action === 'close') return pulse(params, false);
 }
 
 async function probe(device) {

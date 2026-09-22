@@ -7,10 +7,12 @@ const hikvision = require('./hikvision.cjs');
 
 const drivers = { relay, tcp, modbus, wiegand, rfid, hikvision };
 
-async function runDriver(device, action) {
+// opts may carry { side: 'entry' | 'exit' } for full-height turnstiles that
+// expose one rotor per direction on the same controller.
+async function runDriver(device, action, opts = {}) {
   const drv = drivers[device.driver];
   if (!drv) throw new Error('Unknown driver: ' + device.driver);
-  return drv.run(device, action);
+  return drv.run(device, action, opts);
 }
 
 async function probeDriver(device) {

@@ -19,8 +19,8 @@ a GitHub Release. The main VillaSafe web app downloads them from
 
 ```bash
 # from your local clone of villasafe-bridge
-git tag bridge-v1.0.4
-git push origin bridge-v1.0.4
+git tag bridge-v1.1.0
+git push origin bridge-v1.1.0
 ```
 
 The matrix workflow then runs on Windows, macOS, and Ubuntu runners,
@@ -44,6 +44,14 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.1.0** — Redesigned app: big Open/Close buttons per lane with live
+  device health, a live activity feed, a readable health check, and a guided
+  6-digit pairing screen. New offline scanning: the bridge keeps the estate's
+  valid guest passes (codes stored hashed) and serves a signed local API on
+  TCP 8787, so VillaSafe phone apps on the estate network can scan through it
+  and open the lane with no internet. Scans upload with their real time when
+  the connection returns. Allow the app through Windows Firewall on private
+  networks.
 - **v1.0.14** — Make DS-K2804 door opening resilient across Hikvision SDK
   firmware variants. The hardware-bridge now tries `NET_DVR_RemoteControl`
   command `16009` with the full `NET_DVR_CONTROL_GATEWAY` payload first,

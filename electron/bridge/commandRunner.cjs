@@ -1,11 +1,13 @@
 const Store = require('../config/laneStore.cjs');
 const { runDriver, probeDriver } = require('../drivers/index.cjs');
 const rfid = require('../drivers/rfid.cjs');
+const cardBridge = require('./cardBridge.cjs');
 const offlineQueue = require('./offlineQueue.cjs');
 const diagnostics = require('./diagnostics.cjs');
 const signedLog = require('./signedLog.cjs');
 const { callWithFallback, pairWithCode, gatewayHealth, BRIDGE_VERSION } = require('./pairing.cjs');
 const os = require('os');
+const lanGate = require('./lanGate.cjs');
 
 let pollTimer = null;
 let probeTimer = null;
@@ -20,8 +22,9 @@ let rfidTags = []; // cached from server
 let lastCommandAt = {}; // key: laneId:deviceIndex -> ms
 const COOLDOWN_MS = 5000;
 
-async function executeLane(lane, action, commandId) {
-  const evtBase = { laneId: lane.id, commandId, action };
+async function executeLane(lane, action, commandId, opts = {}) {
+  const side = opts.side === 'exit' || opts.side === 'entry' ? opts.side : undefined;
+  const evtBase = { laneId: lane.id, commandId, action, side };
   diagnostics.log(`exec ${action} on lane ${lane.name}`);
   try {
     if (action === 'lockdown') {
@@ -34,14 +37,14 @@ async function executeLane(lane, action, commandId) {
       : ['spike', 'barrier', 'turnstile'];
     for (const kind of order) {
       for (const d of lane.devices.filter(x => x.kind === kind)) {
-        await runDriver(d, action === 'close' ? 'close' : 'open');
+        await runDriver(d, action === 'close' ? 'close' : 'open', { side });
       }
     }
     recordEvent({ ...evtBase, success: true });
     if (action === 'open' && lane.default_open_seconds) {
       setTimeout(async () => {
         for (const d of [...lane.devices].reverse()) {
-          try { await runDriver(d, 'close'); } catch {}
+          try { await runDriver(d, 'close', { side }); } catch {}
         }
         recordEvent({ ...evtBase, action: 'auto-close', success: true });
       }, lane.default_open_seconds * 1000);
@@ -80,6 +83,43 @@ function recordEvent(evt) {
 }
 
 async function refreshDeviceHealth() {
+  return refreshDeviceHealthInner();
+}
+
+/**
+ * Pull card swipes the DS-K2804 reported over the SDK (reader wired via
+ * Wiegand) and turn them into the same events the direct-reader path emits.
+ */
+async function drainWiegandReads() {
+  let events = [];
+  try { events = await cardBridge.drainCardEvents(); } catch { return; }
+  for (const e of events) {
+    const tagUid = String(e.tagUid || e.rawCardNo || '').toUpperCase();
+    if (!tagUid) continue;
+    const laneId = e.laneId || null;
+    const tag = rfidTags.find(t => String(t.tag_uid || '').toUpperCase() === tagUid);
+    const details = { tagUid, rawCardNo: e.rawCardNo, label: tag?.label || e.label || null, doorNo: e.doorNo, via: 'wiegand' };
+    if (!tag) {
+      pendingRfidReads.push({ tagUid, laneId, authorized: false });
+      recordEvent({ laneId, action: 'rfid_denied', source: 'rfid', success: false, error: 'unknown card', details });
+      continue;
+    }
+    if (tag.paused || tag.is_active === false) {
+      pendingRfidReads.push({ tagUid, laneId, label: tag.label, authorized: false });
+      recordEvent({ laneId, action: 'rfid_paused', source: 'rfid', success: false, error: tag.pause_reason || 'paused', details: { ...details, reason: tag.pause_reason || 'paused' } });
+      continue;
+    }
+    if (tag.lane_id && laneId && tag.lane_id !== laneId) {
+      pendingRfidReads.push({ tagUid, laneId, label: tag.label, authorized: false });
+      recordEvent({ laneId, action: 'rfid_blocked', source: 'rfid', success: false, error: 'tag not allowed on this lane', details });
+      continue;
+    }
+    pendingRfidReads.push({ tagUid, laneId, label: tag.label, authorized: true });
+    recordEvent({ laneId, action: 'rfid_read', source: 'rfid', success: true, details });
+  }
+}
+
+async function refreshDeviceHealthInner() {
   const next = [];
   for (const lane of lanes) {
     for (let i = 0; i < (lane.devices || []).length; i++) {
@@ -145,11 +185,13 @@ function refreshRfidReaders() {
 async function syncOnce(cfg) {
   // Drain offline queue (events + results) first
   const buffered = offlineQueue.drain();
+  // Drain Wiegand card swipes reported by the local hardware-bridge
+  await drainWiegandReads();
   // Drain any pending local commands that were queued while offline
   const queuedCmds = offlineQueue.drainPendingCommands();
   for (const qc of queuedCmds) {
     const lane = lanes.find(l => l.id === qc.laneId);
-    if (lane) await executeLane(lane, qc.action, null);
+    if (lane) await executeLane(lane, qc.action, null, { side: qc.side });
   }
   const body = {
     bridgeId: cfg.bridgeId,
@@ -164,6 +206,10 @@ async function syncOnce(cfg) {
     deviceHealth,
     cpuLoad: os.loadavg()[0] || 0,
     lastError: status.lastError,
+    // LAN gate mode: check-ins decided locally, pass list refresh, LAN address
+    lanScans: lanGate.drainScans(),
+    wantPasses: lanGate.needsPasses(),
+    lan: lanGate.announcement() || undefined,
   };
   const applySyncData = async (data, gatewayUsed) => {
     status.gateway = /villasafe\.com/i.test(gatewayUsed || '') ? 'VillaSafe gateway' : 'Configured gateway';
@@ -174,11 +220,15 @@ async function syncOnce(cfg) {
       diagnostics.log('Bridge token refreshed by server');
     }
     lanes = data.lanes || [];
+    lanGate.updateFromSync(data, cfg);
     const newTags = data.rfidTags || [];
     const sig = (arr) => JSON.stringify(arr.map(t => `${t.tag_uid}:${t.paused ? 1 : 0}:${t.lane_id || ''}`).sort());
     const tagsChanged = sig(newTags) !== sig(rfidTags);
     rfidTags = newTags;
     if (tagsChanged || !lanes.length) refreshRfidReaders();
+    // Keep the hardware-bridge + Hikvision controllers in step with the
+    // approved (non-paused) card list so Wiegand reads are authorised locally.
+    cardBridge.syncApproved(lanes, rfidTags, { force: tagsChanged }).catch(() => {});
     Store.update({ lanesCache: lanes });
     status.online = true; status.lastError = null;
     status.queuedOffline = 0;
@@ -207,7 +257,8 @@ async function syncOnce(cfg) {
       if (typeof cmd.device_index === 'number') {
         r = await executeDevice(lane, cmd.device_index, cmd.action);
       } else {
-        r = await executeLane(lane, cmd.action, cmd.id);
+        const sideFromCmd = (cmd.payload && (cmd.payload.side || (cmd.payload.context && cmd.payload.context.side))) || undefined;
+        r = await executeLane(lane, cmd.action, cmd.id, { side: sideFromCmd });
       }
       pendingResults.push({ commandId: cmd.id, success: r.success, result: r });
     }
@@ -244,10 +295,16 @@ async function syncOnce(cfg) {
     }
     status.online = false;
     // Don't surface transient pairing-recovery strings to the web card.
-    status.lastError = /token_expired|missing bridgeId|missing bridgeToken|Token expired/i.test(e.message)
-      ? null : e.message;
+    if (/token_expired|missing bridgeId|missing bridgeToken|Token expired/i.test(e.message)) {
+      status.lastError = null;
+    } else if (/fetch failed|ENOTFOUND|EAI_AGAIN|ETIMEDOUT|ECONNRESET|network|TLS/i.test(e.message)) {
+      status.lastError = "Can't reach VillaSafe gateway from this PC. Check internet, DNS, and any corporate proxy/antivirus TLS interception. (" + e.message + ')';
+    } else {
+      status.lastError = e.message;
+    }
     // Persist them in the offline queue so they survive restarts too
     offlineQueue.requeue(body.events, body.commandResults);
+    lanGate.requeueScans(body.lanScans);
     status.queuedOffline = offlineQueue.size();
     diagnostics.log(`sync offline: ${e.message} — queued ${status.queuedOffline}`);
   }
@@ -260,6 +317,8 @@ function startBridge(cfg, eventCb) {
   // Hydrate cached lanes
   lanes = cfg.lanesCache || [];
   refreshRfidReaders();
+  // Arm Hikvision card (Wiegand) channels — no-op when no hardware-bridge.
+  cardBridge.armControllers().catch(() => {});
   // Immediate sync, then every 5s
   syncOnce(cfg);
   pollTimer = setInterval(() => syncOnce(cfg), 5000);
@@ -279,20 +338,21 @@ function stopBridge() {
 function getStatus() {
   return {
     ...status,
+    lan: lanGate.getLanStatus(),
     queuedOffline: offlineQueue.size(),
     lanes: lanes.map(l => ({ id: l.id, name: l.name, devices: l.devices })),
     deviceHealth,
   };
 }
 
-async function runCommandLocal(laneId, action) {
+async function runCommandLocal(laneId, action, side) {
   const lane = lanes.find(l => l.id === laneId);
   if (!lane) return { ok: false, error: 'Lane not loaded' };
   // If we're offline, queue and still execute locally so OPEN/CLOSE never blocks the guard
   if (status.online === false) {
-    offlineQueue.enqueuePendingCommand({ laneId, action });
+    offlineQueue.enqueuePendingCommand({ laneId, action, side });
   }
-  const r = await executeLane(lane, action, null);
+  const r = await executeLane(lane, action, null, { side });
   return { ok: r.success, error: r.error };
 }
 
@@ -305,8 +365,9 @@ async function runDeviceLocal(laneId, deviceIndex, action) {
 
 function getLanes() { return lanes; }
 function getRfidTags() { return rfidTags; }
+function isOnline() { return status.online !== false; }
 
 module.exports = {
   startBridge, stopBridge, getStatus,
-  runCommandLocal, runDeviceLocal, getLanes, getRfidTags, refreshDeviceHealth,
+  runCommandLocal, runDeviceLocal, getLanes, getRfidTags, refreshDeviceHealth, isOnline,
 };

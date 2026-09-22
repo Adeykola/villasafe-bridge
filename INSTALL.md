@@ -459,3 +459,11 @@ The SW1900 is a desktop USB writer. It does **not** plug into the bridge — it'
 | Tag reads but the wrong lane opens | The tag is registered without a **Lane** restriction and another lane picked it up. Lock the tag to a specific lane in the admin page. |
 
 > All RFID reads are signed into the local audit log (`signedLog`) *and* pushed to the cloud, so you can prove after the fact which EPC opened which gate at which second.
+## LAN gate mode (v1.1.0+)
+
+The bridge keeps your estate's guest passes on this PC and listens on **port 8787** on the estate network, so guard devices signed in to VillaSafe can scan codes and open lanes even when the internet is down.
+
+- When Windows asks, **allow VillaSafe Gate Bridge on private networks** (or add an inbound rule for TCP 8787).
+- Connect the PC to the internet at least once after installing so it receives the pass list and its LAN key. The list refreshes about every minute while online.
+- Guard phones must be on the same network (Wi-Fi or LAN) as this PC.
+- Check-ins decided here upload automatically when the internet returns; anything that changed while offline (for example a cancelled code) is flagged to the estate admin.
