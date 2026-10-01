@@ -2,10 +2,11 @@ const Store = require('../config/laneStore.cjs');
 const { runDriver, probeDriver } = require('../drivers/index.cjs');
 const rfid = require('../drivers/rfid.cjs');
 const cardBridge = require('./cardBridge.cjs');
+const tagStore = require('./tagStore.cjs');
 const offlineQueue = require('./offlineQueue.cjs');
 const diagnostics = require('./diagnostics.cjs');
 const signedLog = require('./signedLog.cjs');
-const { callWithFallback, pairWithCode, gatewayHealth, BRIDGE_VERSION } = require('./pairing.cjs');
+const { callWithFallback, pairWithCode, gatewayHealth, licenceError, BRIDGE_VERSION } = require('./pairing.cjs');
 const os = require('os');
 const lanGate = require('./lanGate.cjs');
 
@@ -18,11 +19,19 @@ let deviceHealth = []; // [{ lane_id, device_index, device_name, device_kind, dr
 let pendingEvents = [];
 let pendingResults = [];
 let pendingRfidReads = [];
-let rfidTags = []; // cached from server
 let lastCommandAt = {}; // key: laneId:deviceIndex -> ms
 const COOLDOWN_MS = 5000;
+// Set when VillaSafe says this estate has no valid desktop licence. Kept in the
+// config file so a restart while offline stays locked; cleared by the next
+// sync VillaSafe accepts.
+let licence = { locked: false, reason: null, message: null };
+
+function lockedResult() {
+  return { success: false, error: licence.message || 'This PC needs a VillaSafe desktop licence key.' };
+}
 
 async function executeLane(lane, action, commandId, opts = {}) {
+  if (licence.locked) return lockedResult();
   const side = opts.side === 'exit' || opts.side === 'entry' ? opts.side : undefined;
   const evtBase = { laneId: lane.id, commandId, action, side };
   diagnostics.log(`exec ${action} on lane ${lane.name}`);
@@ -58,6 +67,7 @@ async function executeLane(lane, action, commandId, opts = {}) {
 }
 
 async function executeDevice(lane, deviceIndex, action) {
+  if (licence.locked) return lockedResult();
   const d = lane.devices[deviceIndex];
   if (!d) return { success: false, error: 'Device not found' };
   const key = `${lane.id}:${deviceIndex}`;
@@ -96,27 +106,57 @@ async function drainWiegandReads() {
   for (const e of events) {
     const tagUid = String(e.tagUid || e.rawCardNo || '').toUpperCase();
     if (!tagUid) continue;
-    const laneId = e.laneId || null;
-    const tag = rfidTags.find(t => String(t.tag_uid || '').toUpperCase() === tagUid);
-    const details = { tagUid, rawCardNo: e.rawCardNo, label: tag?.label || e.label || null, doorNo: e.doorNo, via: 'wiegand' };
-    if (!tag) {
-      pendingRfidReads.push({ tagUid, laneId, authorized: false });
-      recordEvent({ laneId, action: 'rfid_denied', source: 'rfid', success: false, error: 'unknown card', details });
-      continue;
-    }
-    if (tag.paused || tag.is_active === false) {
-      pendingRfidReads.push({ tagUid, laneId, label: tag.label, authorized: false });
-      recordEvent({ laneId, action: 'rfid_paused', source: 'rfid', success: false, error: tag.pause_reason || 'paused', details: { ...details, reason: tag.pause_reason || 'paused' } });
-      continue;
-    }
-    if (tag.lane_id && laneId && tag.lane_id !== laneId) {
-      pendingRfidReads.push({ tagUid, laneId, label: tag.label, authorized: false });
-      recordEvent({ laneId, action: 'rfid_blocked', source: 'rfid', success: false, error: 'tag not allowed on this lane', details });
-      continue;
-    }
-    pendingRfidReads.push({ tagUid, laneId, label: tag.label, authorized: true });
+    // The controller already decided (it holds only approved cards); this
+    // records the read with VillaSafe's reason.
+    await handleTagRead({ laneId: e.laneId || null, tagUid, via: 'wiegand', extra: { rawCardNo: e.rawCardNo, doorNo: e.doorNo }, open: false });
+  }
+}
+
+// Event names the web's RFID activity tab understands.
+const REFUSAL_ACTION = { unknown: 'rfid_denied', wrong_lane: 'rfid_blocked', suspended: 'rfid_paused', owing: 'rfid_paused', expired: 'rfid_paused' };
+
+/**
+ * One decision for every tag read, from any reader, using the tag list saved
+ * on this PC (tagStore) — so it works the same with or without internet.
+ */
+async function handleTagRead({ lane = null, laneId = lane?.id || null, tagUid, via, extra = {}, open = true, logOnly = false }) {
+  const tag = tagStore.find(tagUid);
+  const why = tagStore.refusal(tag, laneId);
+  const details = { tagUid, label: tag?.label || null, via, ...extra };
+  // "logged": this PC records its own detailed rfid_* event for the read, so
+  // VillaSafe only bumps last_seen and doesn't log it a second time. A tag
+  // that opens the gate is logged by VillaSafe (the PC logs the gate "open").
+  const read = { tagUid, laneId, label: tag?.label || null, authorized: !why, via, logged: true };
+  pendingRfidReads.push(read);
+  if (why) {
+    recordEvent({ laneId, action: REFUSAL_ACTION[why] || 'rfid_denied', source: 'rfid', success: false,
+      error: tagStore.REASON_TEXT[why] || why, details: { ...details, reason: why } });
+    return false;
+  }
+  if (logOnly) {
+    recordEvent({ laneId, action: 'rfid_read', source: 'rfid', success: true, details: { ...details, logOnly: true } });
+    return true;
+  }
+  if (open && lane) {
+    read.logged = false;
+    await executeLane(lane, 'open', null);
+  } else {
     recordEvent({ laneId, action: 'rfid_read', source: 'rfid', success: true, details });
   }
+  return true;
+}
+
+/**
+ * Re-check which tags may open — every tick, even offline, so a tag whose
+ * access runs out is refused on time — and push the change to Hikvision
+ * controllers, which decide Wiegand swipes by themselves.
+ */
+function applyTagChanges({ force = false } = {}) {
+  // Until a real list has arrived, an empty one would wipe every card from
+  // the controllers — and with no internet, lock every resident out.
+  if (!tagStore.savedAt()) return;
+  // Cheap when nothing changed: cardBridge skips an unchanged card list.
+  cardBridge.syncApproved(lanes, tagStore.effective(), { force }).catch(() => {});
 }
 
 async function refreshDeviceHealthInner() {
@@ -141,51 +181,37 @@ async function refreshDeviceHealthInner() {
   deviceHealth = next;
 }
 
-function refreshRfidReaders() {
+/**
+ * (Re)start the directly connected readers (e.g. S4A on USB/RS-485 or TCP).
+ * Only when the readers' own settings change: which tags may open is decided
+ * per read by handleTagRead, so a tag list change never closes a serial port
+ * while a car is at the boom.
+ */
+let readerSignature = null;
+function refreshRfidReaders({ force = false } = {}) {
+  const readers = lanes.flatMap((lane) => (lane.devices || [])
+    .filter((x) => x.driver === 'rfid')
+    .map((d) => ({ lane, d })));
+  const sig = JSON.stringify(readers.map(({ lane, d }) => [lane.id, d.name, d.params || d.config || {}]));
+  if (!force && sig === readerSignature) return;
+  readerSignature = sig;
   rfid.stopAll();
-  for (const lane of lanes) {
-    for (const d of (lane.devices || []).filter(x => x.driver === 'rfid')) {
-      try {
-        // Inject the live allow-list (active, non-paused tags scoped to this lane or global)
-        // so unauthorised UIDs are rejected at the driver layer.
-        const laneAllow = rfidTags
-          .filter(t => t.is_active !== false && !t.paused)
-          .filter(t => !t.lane_id || t.lane_id === lane.id)
-          .map(t => String(t.tag_uid || '').toUpperCase());
-        d.params = { ...(d.params || {}), allowList: laneAllow, allowListMode: 'allow_only_listed' };
-        rfid.startReader(d, async (tagUid, _dev, meta) => {
-          if (meta?.blocked) {
-            // Distinguish "paused for debt" from "unknown/blocked"
-            const known = rfidTags.find(t => String(t.tag_uid || '').toUpperCase() === tagUid);
-            if (known && known.paused) {
-              pendingRfidReads.push({ tagUid, laneId: lane.id, label: known.label, authorized: false });
-              recordEvent({ laneId: lane.id, action: 'rfid_paused', source: 'rfid', success: false, error: known.pause_reason || 'paused', details: { tagUid, label: known.label, reason: known.pause_reason || 'paused' } });
-            } else {
-              pendingRfidReads.push({ tagUid, laneId: lane.id, authorized: false });
-              recordEvent({ laneId: lane.id, action: 'rfid_blocked', source: 'rfid', success: false, error: 'tag blocked by allow-list', details: { tagUid } });
-            }
-            return;
-          }
-          const tag = rfidTags.find(t => t.tag_uid?.toUpperCase() === tagUid);
-          const authorized = !!tag && (!tag.lane_id || tag.lane_id === lane.id);
-          pendingRfidReads.push({ tagUid, laneId: lane.id, label: tag?.label, authorized });
-          // Log-only mode: record the read but never auto-open, even for known tags.
-          if (meta?.logOnly) {
-            recordEvent({ laneId: lane.id, action: 'rfid_read', source: 'rfid', success: true, details: { tagUid, label: tag?.label, logOnly: true } });
-            return;
-          }
-          if (authorized) await executeLane(lane, 'open', null);
-          else recordEvent({ laneId: lane.id, action: 'rfid_denied', source: 'rfid', success: false, error: 'unknown tag', details: { tagUid } });
-        });
-      } catch (e) { diagnostics.log(`RFID start failed: ${e.message}`); }
-    }
+  for (const { lane, d } of readers) {
+    try {
+      // The driver only debounces and reports; "log only" is the one mode it keeps.
+      rfid.startReader(d, async (tagUid, _dev, meta) => {
+        await handleTagRead({ lane, tagUid, via: 'reader', logOnly: !!meta?.logOnly });
+      });
+    } catch (e) { diagnostics.log(`RFID start failed: ${e.message}`); }
   }
 }
 
 async function syncOnce(cfg) {
+  // Tags can expire between syncs, or with no internet at all.
+  applyTagChanges();
   // Drain offline queue (events + results) first
   const buffered = offlineQueue.drain();
-  // Drain Wiegand card swipes reported by the local hardware-bridge
+  // Drain Wiegand card swipes reported by the built-in Hikvision service
   await drainWiegandReads();
   // Drain any pending local commands that were queued while offline
   const queuedCmds = offlineQueue.drainPendingCommands();
@@ -213,6 +239,7 @@ async function syncOnce(cfg) {
   };
   const applySyncData = async (data, gatewayUsed) => {
     status.gateway = /villasafe\.com/i.test(gatewayUsed || '') ? 'VillaSafe gateway' : 'Configured gateway';
+    if (licence.locked) setLicence(null);
     // Honor rotated token
     if (data.rotatedToken) {
       Store.update({ bridgeToken: data.rotatedToken, tokenExpiresAt: data.tokenExpiresAt || cfg.tokenExpiresAt });
@@ -221,14 +248,11 @@ async function syncOnce(cfg) {
     }
     lanes = data.lanes || [];
     lanGate.updateFromSync(data, cfg);
-    const newTags = data.rfidTags || [];
-    const sig = (arr) => JSON.stringify(arr.map(t => `${t.tag_uid}:${t.paused ? 1 : 0}:${t.lane_id || ''}`).sort());
-    const tagsChanged = sig(newTags) !== sig(rfidTags);
-    rfidTags = newTags;
-    if (tagsChanged || !lanes.length) refreshRfidReaders();
-    // Keep the hardware-bridge + Hikvision controllers in step with the
-    // approved (non-paused) card list so Wiegand reads are authorised locally.
-    cardBridge.syncApproved(lanes, rfidTags, { force: tagsChanged }).catch(() => {});
+    // Save the estate's tags on this PC so they keep working offline and
+    // across restarts, then bring readers and Hikvision controllers in step.
+    if (Array.isArray(data.rfidTags)) tagStore.save(cfg.bridgeId, data.rfidTags);
+    refreshRfidReaders();
+    applyTagChanges();
     Store.update({ lanesCache: lanes });
     status.online = true; status.lastError = null;
     status.queuedOffline = 0;
@@ -267,6 +291,17 @@ async function syncOnce(cfg) {
     const { data, gatewayUsed } = await callWithFallback(cfg.gatewayUrl, '/bridge-sync', body);
     await applySyncData(data, gatewayUsed);
   } catch (e) {
+    // VillaSafe answered, but this estate's desktop licence is missing,
+    // revoked or replaced. Lock the gates until a valid key is entered here.
+    const refusal = licenceError(e);
+    if (refusal) {
+      setLicence(refusal);
+      status.online = true;
+      status.lastError = licence.message;
+      offlineQueue.requeue(body.events, body.commandResults);
+      lanGate.requeueScans(body.lanScans);
+      return;
+    }
     // Auto-recover: stale-token or "bridge out of date" → re-pair using the cached code
     const looksAuthFail = /token_expired|Unauthorized bridge|missing bridgeToken|missing bridgeId|Token expired|Bridge token missing|Bridge ID missing|HTTP 401|HTTP 400/i.test(e.message);
     if (looksAuthFail && cfg.pairingCode) {
@@ -276,7 +311,7 @@ async function syncOnce(cfg) {
         const health = await gatewayHealth(cfg.gatewayUrl);
         if (!health.ok) throw new Error(health.error || 'VillaSafe gateway is not ready');
         diagnostics.log('Heartbeat auth failed — attempting auto re-pair…');
-        const r = await pairWithCode(cfg.gatewayUrl, cfg.pairingCode);
+        const r = await pairWithCode(cfg.gatewayUrl, cfg.pairingCode, undefined, cfg.licenseKey);
         if (r.ok && r.bridgeToken) {
           Store.update({
             bridgeId: r.bridgeId, tenantId: r.tenantId, bridgeToken: r.bridgeToken,
@@ -310,14 +345,37 @@ async function syncOnce(cfg) {
   }
 }
 
+/** Record (or clear, with null) VillaSafe's licence refusal and tell the UI. */
+function setLicence(refusal) {
+  const next = refusal
+    ? { locked: true, reason: refusal.reason || 'missing', message: refusal.message || 'This PC needs a VillaSafe desktop licence key.' }
+    : { locked: false, reason: null, message: null };
+  const changed = next.locked !== licence.locked || next.reason !== licence.reason;
+  licence = next;
+  if (!changed) return;
+  Store.update({ licenseLock: next.locked ? { reason: next.reason, message: next.message } : null });
+  diagnostics.log(next.locked ? `Licence: gates locked (${next.reason})` : 'Licence: accepted by VillaSafe');
+  onEvent?.({ action: 'licence', success: !next.locked, details: next });
+}
+
 function startBridge(cfg, eventCb) {
   stopBridge();
   onEvent = eventCb;
   if (!cfg.bridgeId || !cfg.bridgeToken) return;
-  // Hydrate cached lanes
+  licence = cfg.licenseLock
+    ? { locked: true, reason: cfg.licenseLock.reason || 'missing', message: cfg.licenseLock.message || null }
+    : { locked: false, reason: null, message: null };
+  // Don't carry the last loop's error into the first heartbeat — after a
+  // licence key is accepted it would put "enter the licence key" straight
+  // back on the web card.
+  status.lastError = licence.locked ? licence.message : null;
+  // Hydrate cached lanes and the tags saved on this PC, so readers work
+  // straight away — including after a restart with no internet.
   lanes = cfg.lanesCache || [];
-  refreshRfidReaders();
-  // Arm Hikvision card (Wiegand) channels — no-op when no hardware-bridge.
+  tagStore.load(cfg.bridgeId);
+  refreshRfidReaders({ force: true });
+  applyTagChanges({ force: true });
+  // Arm Hikvision card (Wiegand) channels — no-op when no controllers are set up.
   cardBridge.armControllers().catch(() => {});
   // Immediate sync, then every 5s
   syncOnce(cfg);
@@ -338,6 +396,8 @@ function stopBridge() {
 function getStatus() {
   return {
     ...status,
+    licence,
+    tags: { total: tagStore.tags().length, allowed: tagStore.allowed().length, savedAt: tagStore.savedAt() },
     lan: lanGate.getLanStatus(),
     queuedOffline: offlineQueue.size(),
     lanes: lanes.map(l => ({ id: l.id, name: l.name, devices: l.devices })),
@@ -364,10 +424,11 @@ async function runDeviceLocal(laneId, deviceIndex, action) {
 }
 
 function getLanes() { return lanes; }
-function getRfidTags() { return rfidTags; }
+function getRfidTags() { return tagStore.tags(); }
 function isOnline() { return status.online !== false; }
+function isLicensed() { return !licence.locked; }
 
 module.exports = {
-  startBridge, stopBridge, getStatus,
+  startBridge, stopBridge, getStatus, isLicensed,
   runCommandLocal, runDeviceLocal, getLanes, getRfidTags, refreshDeviceHealth, isOnline,
 };

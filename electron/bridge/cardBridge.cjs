@@ -1,7 +1,7 @@
-// Wiegand card path: reader → DS-K2804 → hardware-bridge → here → VillaSafe Cloud.
+// Wiegand card path: reader → DS-K2804 → built-in Hikvision service → here → VillaSafe Cloud.
 //
 // Two jobs each sync tick:
-//   1. drain buffered card swipes from the local hardware-bridge and turn them
+//   1. drain buffered card swipes from the built-in Hikvision service and turn them
 //      into rfidReads / gate events for the cloud,
 //   2. push the approved (active, non-paused) tag list down to the bridge and
 //      into every Hikvision controller so blocking survives an internet outage.
@@ -16,7 +16,7 @@ function approvedFor(tags, laneId) {
     .filter(t => !laneId || !t.lane_id || t.lane_id === laneId);
 }
 
-/** Tell the hardware-bridge which tags are approved so reads can be labelled. */
+/** Tell the Hikvision service which tags are approved so reads can be labelled. */
 async function pushApprovedTags(tags) {
   const payload = (tags || []).map(t => ({
     tagUid: String(t.tag_uid || '').toUpperCase(),
@@ -62,22 +62,35 @@ async function provisionControllers(lanes, tags) {
 async function syncApproved(lanes, tags, { force = false } = {}) {
   const sig = JSON.stringify((tags || [])
     .map(t => `${t.tag_uid}:${t.paused ? 1 : 0}:${t.is_active === false ? 0 : 1}:${t.lane_id || ''}`)
-    .sort());
+    .sort()) + JSON.stringify((lanes || []).map(l => l.id));
   if (!force && sig === lastProvisionSig) return null;
+  // After a failure, retry once a minute rather than on every 5-second tick,
+  // so an unplugged controller isn't hammered with logins.
+  if (!force && sig === failedSig && Date.now() < retryAt) return null;
   lastProvisionSig = sig;
   try {
     const count = await pushApprovedTags(tags);
     const provisioned = await provisionControllers(lanes, tags);
-    diagnostics.log(`Card list synced (${count} approved tags)`);
+    const failed = provisioned.some(r => r.error || (r.errors && r.errors.length));
+    if (failed) markFailed(sig);
+    diagnostics.log(`Card list synced (${count} approved tags${failed ? ', some controllers failed — retrying in a minute' : ''})`);
     return { count, provisioned };
   } catch (e) {
-    // hardware-bridge may simply not be installed on this PC (direct-reader setups)
-    lastProvisionSig = '';
+    // the Hikvision service may have no controllers or no SDK (direct-reader setups)
+    markFailed(sig);
     return { error: e.message };
   }
 }
 
-/** Drain card swipes buffered by the hardware-bridge. */
+let failedSig = '';
+let retryAt = 0;
+function markFailed(sig) {
+  lastProvisionSig = '';
+  failedSig = sig;
+  retryAt = Date.now() + 60_000;
+}
+
+/** Drain card swipes buffered by the Hikvision service. */
 async function drainCardEvents() {
   try {
     const r = await hik.bridgeRequest('GET', '/api/cards/events?limit=100', null);

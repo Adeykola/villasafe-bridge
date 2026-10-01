@@ -1,12 +1,15 @@
 {
   "name": "villasafe-gate-bridge",
-  "version": "1.1.0",
-  "description": "VillaSafe desktop bridge for turnstiles, boom barriers, tyre killers, and long-range RFID readers.",
+  "version": "1.2.0",
+  "description": "VillaSafe Gate Bridge — turnstiles, boom barriers, tyre killers and Hikvision controllers in one app",
   "main": "electron/main.cjs",
-  "author": "VillaSafe",
-  "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "test": "node --test test/*.test.cjs test/hardware/*.test.js",
+    "hardware:standalone": "node hardware/app.js",
+    "package:win": "electron-packager . VillaSafeGateBridge --platform=win32 --arch=x64 --out=release --overwrite --icon=build/icon.ico",
+    "package:mac": "electron-packager . VillaSafeGateBridge --platform=darwin --arch=x64 --out=release --overwrite --icon=build/icon.icns",
+    "package:linux": "electron-packager . VillaSafeGateBridge --platform=linux --arch=x64 --out=release --overwrite --icon=build/icon.png",
     "dist:win": "electron-builder --win nsis --x64",
     "dist:mac": "electron-builder --mac dmg --x64",
     "dist:linux": "electron-builder --linux AppImage --x64"
@@ -14,19 +17,71 @@
   "build": {
     "appId": "com.villasafe.gatebridge",
     "productName": "VillaSafeGateBridge",
-    "directories": { "output": "release", "buildResources": "build" },
-    "files": ["electron/**/*", "ui/**/*", "build/**/*", "package.json"],
-    "win": { "target": ["nsis"], "icon": "build/icon.ico" },
-    "nsis": { "oneClick": true, "perMachine": false, "createDesktopShortcut": true, "shortcutName": "VillaSafe Gate Bridge", "artifactName": "VillaSafeGateBridge-Setup.${ext}" },
-    "mac": { "target": ["dmg"], "icon": "build/icon.icns", "category": "public.app-category.utilities", "artifactName": "VillaSafeGateBridge.${ext}" },
-    "linux": { "target": ["AppImage"], "icon": "build/icon.png", "category": "Utility", "artifactName": "VillaSafeGateBridge.${ext}" }
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**/*",
+      "hardware/**/*",
+      "ui/**/*",
+      "build/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "VillaSafe Gate Bridge",
+      "artifactName": "VillaSafeGateBridge-Setup.${ext}"
+    },
+    "mac": {
+      "target": [
+        "dmg"
+      ],
+      "icon": "build/icon.icns",
+      "category": "public.app-category.utilities",
+      "artifactName": "VillaSafeGateBridge.${ext}"
+    },
+    "linux": {
+      "target": [
+        "AppImage"
+      ],
+      "icon": "build/icon.png",
+      "category": "Utility",
+      "artifactName": "VillaSafeGateBridge.${ext}"
+    },
+    "asarUnpack": [
+      "node_modules/koffi/**/*"
+    ],
+    "extraResources": [
+      {
+        "from": "vendor/hcnetsdk",
+        "to": "hcnetsdk",
+        "filter": [
+          "**/*",
+          "!README.md"
+        ]
+      }
+    ]
   },
   "dependencies": {
+    "express": "^4.19.2",
+    "koffi": "^2.9.0",
     "modbus-serial": "^8.0.16",
-    "serialport": "^12.0.0"
+    "pino": "^9.3.2",
+    "serialport": "^12.0.0",
+    "zod": "^3.23.8"
   },
   "devDependencies": {
     "electron": "^31.0.0",
+    "@electron/packager": "^18.3.0",
     "electron-builder": "^24.13.3"
   }
 }

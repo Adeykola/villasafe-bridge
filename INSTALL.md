@@ -463,7 +463,10 @@ The SW1900 is a desktop USB writer. It does **not** plug into the bridge — it'
 
 The bridge keeps your estate's guest passes on this PC and listens on **port 8787** on the estate network, so guard devices signed in to VillaSafe can scan codes and open lanes even when the internet is down.
 
-- When Windows asks, **allow VillaSafe Gate Bridge on private networks** (or add an inbound rule for TCP 8787).
+- The PC can join the estate router by **cable or Wi-Fi**; guard phones, tablets and scanners work the same either way. They must be on the same router as the PC.
+- Open **Offline scanning** on the bridge. If it says Windows Firewall is blocking guard phones (usual when the Wi-Fi is marked **Public**), press **Let guard phones in** and approve the Windows prompt. That adds one rule for TCP 8787 from private addresses only, switches off any "block" rule a cancelled first-run prompt left behind, and stops Windows turning the Wi-Fi adapter off to save power.
+- The bridge keeps the PC from sleeping while it runs.
+- Phones try the address this PC last reported. If the router gave it a new one while the internet was down, they search the local network for it (a few seconds, once) and remember it. A **DHCP reservation** for the PC in the router avoids even that.
+- Router settings that stop phones reaching the PC: **AP / client isolation** (often on guest Wi-Fi) and a separate guest network. Test from a guard phone by opening `http://<PC address>:8787/v1/health` in its browser; the Offline scanning page shows the exact link.
 - Connect the PC to the internet at least once after installing so it receives the pass list and its LAN key. The list refreshes about every minute while online.
-- Guard phones must be on the same network (Wi-Fi or LAN) as this PC.
 - Check-ins decided here upload automatically when the internet returns; anything that changed while offline (for example a cancelled code) is flagged to the estate admin.

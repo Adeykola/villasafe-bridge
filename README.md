@@ -16,16 +16,30 @@ Any device that exposes one of the following triggers is supported:
 | tcp     | IP controller listening for ASCII OPEN/CLOSE commands |
 | modbus  | Industrial barrier / spike controller on RS-485       |
 | wiegand | Reader emulator sending card IDs to an access panel   |
+| hikvision | Hikvision DS-K2804 access controller over HCNetSDK (port 8000) — the SDK service is built in; see `INSTALL-HIKVISION.md` |
 
 ## Setup
 
 1. Install Node.js 20+.
 2. `npm install`
 3. `npm start`
-4. In the app, enter the 6-digit **pairing code** from VillaSafe → Gate Bridges and click **Pair this PC**. Cloud connection details are baked into the build — no URL or key to paste.
+4. In the app, enter the 6-digit **pairing code** from VillaSafe → Gate Bridges, check the estate name, then enter the estate's **desktop licence key** and confirm. Cloud connection details are baked into the build.
 5. Configure lanes from the web UI; the desktop app pulls config and listens for commands.
 
 One installed Bridge pairs to one estate (the site whose hardware it's wired to). To serve another estate, install the Bridge on a PC at that site.
+
+## Desktop licence
+
+The desktop app only runs an estate's gates once that estate has paid for it. Super admin issues the key in **Tenants → Estate controls → Desktop Gate Bridge licence**. The key is shown once, and VillaSafe stores only its SHA-256.
+
+- Pairing needs the key (`pair-gate-bridge` checks it).
+- Every sync checks that the estate's licence is current and that this PC activated with the current key (`bridge-sync`). If not, the PC locks its lanes (buttons, RFID, schedules and LAN scans) and shows a **Gates locked** screen where the key can be typed in without re-pairing. Guards' phones keep checking guests in through VillaSafe.
+- **Suspend** locks every PC in the estate at its next sync, and **Restore** unlocks them. **Issue a new key** locks the PCs on the old key until the new one is entered.
+- A PC that is offline keeps whatever state VillaSafe last told it, so a paid estate never locks just because the internet dropped.
+
+## Hikvision (HCNetSDK) service
+
+`hardware/` is the Hikvision service that used to ship separately as "VillaSafeHardwareBridge". It now starts inside this app, on loopback port 8788 (or the next free port up to 8792), with a token minted on every launch. Controller records live in `~/.villasafe-gate-bridge/hardware/`. The Hikvision SDK itself must be copied onto the PC once (Hikvision forbids redistributing it); see `docs/hardware/SDK_INSTALL.md`.
 
 ## Packaging
 

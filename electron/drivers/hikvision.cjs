@@ -1,15 +1,26 @@
-// Hikvision driver — routes all controller I/O through the local hardware-bridge
-// REST service (default http://127.0.0.1:8787). The bridge speaks Hikvision
-// HCNetSDK on port 8000, replacing the deprecated ISAPI/HTTP path (DS-K2804
-// firmware ships with HTTP/HTTPS disabled by default, so ISAPI is unreachable).
+// Hikvision driver — routes all controller I/O through the Hikvision service
+// built into this app (desktop/hardware, started by main.cjs on loopback). The
+// service speaks Hikvision HCNetSDK on port 8000, replacing the deprecated
+// ISAPI/HTTP path (DS-K2804 firmware ships with HTTP/HTTPS disabled by default,
+// so ISAPI is unreachable).
 //
 // Device shape from lane config:
 //   { driver: 'hikvision', params: { host, username, password, doorNo, sdkPort?, controllerId? } }
 const http = require('http');
 
-const BRIDGE_HOST = process.env.VILLASAFE_BRIDGE_HOST || '127.0.0.1';
-const BRIDGE_PORT = Number(process.env.VILLASAFE_BRIDGE_PORT || 8787);
-const BRIDGE_TOKEN = process.env.VILLASAFE_BRIDGE_TOKEN || '';
+// main.cjs calls configure() once the built-in service is listening. The env
+// vars let a developer point at a service started by hand instead.
+let BRIDGE_HOST = process.env.VILLASAFE_BRIDGE_HOST || '127.0.0.1';
+let BRIDGE_PORT = Number(process.env.VILLASAFE_BRIDGE_PORT || 8788);
+let BRIDGE_TOKEN = process.env.VILLASAFE_BRIDGE_TOKEN || '';
+let serviceError = null;
+
+function configure({ host, port, token, error } = {}) {
+  if (host) BRIDGE_HOST = host;
+  if (port) BRIDGE_PORT = Number(port);
+  if (token !== undefined) BRIDGE_TOKEN = token;
+  serviceError = error || null;
+}
 
 // Unwrap a bridge error payload — the hardware-bridge returns errors as
 // BridgeError.toJSON() objects like { code, message, hint }. A naive template
@@ -34,7 +45,10 @@ function formatBridgeError(parsed, statusCode) {
 function bridgeHealth() {
   return new Promise((resolve) => {
     const req = http.request(
-      { host: BRIDGE_HOST, port: BRIDGE_PORT, method: 'GET', path: '/api/health', timeout: 3000 },
+      {
+        host: BRIDGE_HOST, port: BRIDGE_PORT, method: 'GET', path: '/api/health', timeout: 3000,
+        headers: BRIDGE_TOKEN ? { 'X-Bridge-Token': BRIDGE_TOKEN } : {},
+      },
       (res) => {
         let chunks = '';
         res.on('data', (c) => (chunks += c));
@@ -54,8 +68,9 @@ async function diagnoseBridgeFailure(originalError) {
   const h = await bridgeHealth();
   if (!h.reachable) {
     return new Error(
-      'VillaSafeHardwareBridge service is not running on this PC (127.0.0.1:8787). ' +
-      'Install/start it, then retry. Underlying: ' + originalError.message,
+      'The Hikvision service inside the Gate Bridge did not start' +
+      (serviceError ? ` (${serviceError})` : '') +
+      '. Restart the Gate Bridge app. Underlying: ' + originalError.message,
     );
   }
   const sdk = h.body && h.body.sdk;
@@ -67,15 +82,16 @@ async function diagnoseBridgeFailure(originalError) {
     if (le.hint) parts.push(`— Hint: ${le.hint}`);
     const last = parts.join(' ');
     return new Error(
-      'Hardware bridge is running but HCNetSDK is not loaded. ' +
-      'Copy the Hikvision SDK files into vendor/hcnetsdk/win-x64/ (see docs/SDK_INSTALL.md). ' +
+      'HCNetSDK is not loaded. ' +
+      `Copy the Hikvision SDK files into ${sdk.folder || 'the hcnetsdk folder'} (see INSTALL-HIKVISION.md), ` +
+      'then press Retry SDK on the Health page. ' +
       (last ? `SDK error: ${last}. ` : '') +
       'Underlying: ' + originalError.message,
     );
   }
   if (/ECONNRESET/i.test(originalError.message)) {
     return new Error(
-      'hardware-bridge reset the connection mid-response — check its console for a crash, then retry. ' +
+      'The Hikvision service reset the connection mid-response — check the Health page logs, then retry. ' +
       'Underlying: ' + originalError.message,
     );
   }
@@ -100,16 +116,16 @@ function bridgeRequest(method, path, body) {
           let parsed = null;
           try { parsed = chunks ? JSON.parse(chunks) : null; } catch { parsed = { raw: chunks }; }
           if (res.statusCode >= 200 && res.statusCode < 300) return resolve(parsed);
-          reject(new Error(`hardware-bridge: ${formatBridgeError(parsed, res.statusCode)}`));
+          reject(new Error(`Hikvision: ${formatBridgeError(parsed, res.statusCode)}`));
         });
       },
     );
-    req.on('timeout', () => req.destroy(new Error('hardware-bridge timeout')));
+    req.on('timeout', () => req.destroy(new Error('Hikvision service timed out')));
     req.on('error', (err) => {
       if (err.code === 'ECONNREFUSED') {
-        reject(new Error('hardware-bridge is not running on 127.0.0.1:8787. Start VillaSafeHardwareBridge on the guardhouse PC.'));
+        reject(new Error(`The built-in Hikvision service is not running on ${BRIDGE_HOST}:${BRIDGE_PORT}. Restart the Gate Bridge app.`));
       } else {
-        reject(new Error(`hardware-bridge unreachable: ${err.message} (${err.code || 'no-code'})`));
+        reject(new Error(`Hikvision service unreachable: ${err.message} (${err.code || 'no-code'})`));
       }
     });
     if (data) req.write(data);
@@ -167,4 +183,4 @@ async function probe(device) {
   }
 }
 
-module.exports = { run, probe, bridgeRequest, controllerIdFor, ensureController, doorNoFor };
+module.exports = { configure, run, probe, bridgeRequest, bridgeHealth, controllerIdFor, ensureController, doorNoFor };

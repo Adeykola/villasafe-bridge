@@ -108,8 +108,8 @@
     .content { flex: 1; overflow-y: auto; padding: 26px 28px 40px; }
     .page { display: none; }
     .page.active { display: block; animation: pageIn .45s var(--ease) both; }
-    #page-pair.active { display: flex; min-height: 100%; }
-    #page-pair .pair { margin: auto; width: 100%; }
+    #page-pair.active, #page-licence.active { display: flex; min-height: 100%; }
+    #page-pair .pair, #page-licence .pair { margin: auto; width: 100%; }
     @keyframes pageIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
 
     .page-head { display: flex; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 20px; flex-wrap: wrap; }
@@ -247,6 +247,15 @@
       color: var(--text); font: inherit; font-family: var(--mono); font-size: 13px;
     }
     .field input:focus { outline: none; border-color: var(--blue); }
+    .licence-field { margin-bottom: 18px; }
+    .licence-field small { display: block; margin-top: 6px; color: var(--faint); font-size: 12px; }
+    .field input.licence-input { font-size: 15px; letter-spacing: .08em; text-transform: uppercase; padding: 13px 14px; }
+    .field input.licence-input.bad { border-color: var(--close); animation: shake .4s var(--ease); }
+    .lock-eyebrow { color: var(--close); }
+    .lan-help { margin-top: 4px; color: var(--muted); font-size: 13px; }
+    .lan-help summary { cursor: pointer; color: var(--text); font-weight: 600; }
+    .lan-help ol { margin: 10px 0 0; padding-left: 18px; display: grid; gap: 8px; }
+    .lan-help code, #lanTestUrl { font-family: var(--mono); color: var(--text); word-break: break-all; }
     .inline { display: flex; gap: 10px; align-items: end; }
     .inline .field { flex: 1; }
 
@@ -400,11 +409,41 @@
                   <div class="name" id="confirmEstate"></div>
                   <div class="meta" id="confirmMeta"></div>
                 </div>
+                <div class="field licence-field">
+                  <label for="pairLicence">Desktop licence key</label>
+                  <input id="pairLicence" class="licence-input" placeholder="VS-XXXXX-XXXXX-XXXXX-XXXXX" spellcheck="false" autocomplete="off" />
+                  <small>VillaSafe gives each estate its own key once the desktop app is paid for.</small>
+                </div>
                 <div class="row-btns">
                   <button class="btn primary" id="confirmPairBtn" style="flex:1">Yes, pair this PC</button>
                   <button class="btn ghost" id="cancelPairBtn">Back</button>
                 </div>
               </div>
+            </div>
+          </div>
+        </section>
+
+        <!-- ============ LICENCE LOCK (paired, but no valid licence) ============ -->
+        <section class="page" id="page-licence">
+          <div class="pair">
+            <div>
+              <div class="pair-eyebrow lock-eyebrow">Gates locked</div>
+              <h1 class="pair-title">This PC needs <span>a licence key.</span></h1>
+              <p class="page-sub" id="licenceWhy">VillaSafe hasn't confirmed a desktop licence for this estate.</p>
+              <ol class="pair-steps">
+                <li><b>1</b><span>Ask your estate admin or VillaSafe for the estate's <strong>desktop licence key</strong>.</span></li>
+                <li><b>2</b><span>Type it in here. You don't need to pair again.</span></li>
+                <li><b>3</b><span>Until then, guards can still check guests in on their phones — only this PC's lanes are locked.</span></li>
+              </ol>
+            </div>
+            <div class="pair-card">
+              <h3>Enter licence key</h3>
+              <p>It looks like <span class="num" style="font-family:var(--mono)">VS-7KQ2M-…</span> and is the same for every gate PC in the estate.</p>
+              <div class="field licence-field">
+                <label for="lockLicence">Licence key</label>
+                <input id="lockLicence" class="licence-input" placeholder="VS-XXXXX-XXXXX-XXXXX-XXXXX" spellcheck="false" autocomplete="off" />
+              </div>
+              <button class="btn primary block" id="activateBtn" disabled>Unlock this PC</button>
             </div>
           </div>
         </section>
@@ -469,12 +508,22 @@
             </div>
             <div class="panel">
               <h3>Connecting guard phones</h3>
-              <p class="desc">Guard phones find this PC automatically when they're on the same Wi-Fi or network cable as it. Nothing to type in.</p>
+              <p class="desc">Guard phones, tablets and scanners find this PC automatically when they're on the same router as it, whether this PC uses a cable or Wi-Fi. Nothing to type in.</p>
+              <div class="status-line"><span class="dot" id="fwDot"></span><span id="fwState">Checking Windows Firewall…</span></div>
+              <button class="btn primary" id="allowPhonesBtn" hidden style="margin:4px 0 16px">Let guard phones in</button>
               <dl class="kv">
+                <dt>This PC's address</dt><dd class="num" id="lanAddrs">—</dd>
                 <dt>Network port</dt><dd class="num" id="lanPort">8787</dd>
                 <dt>Works from</dt><dd>VillaSafe Android and iPhone apps</dd>
               </dl>
-              <p class="desc" style="margin-bottom:0">If phones can't reach this PC, allow <strong>VillaSafe Gate Bridge</strong> through Windows Firewall on private networks. Windows usually asks the first time the app opens.</p>
+              <details class="lan-help">
+                <summary>Phones still can't reach it?</summary>
+                <ol>
+                  <li>On a guard phone connected to the same Wi-Fi, open <span class="num" id="lanTestUrl">http://…:8787/v1/health</span> in the browser. It should show <code>"ok":true</code>.</li>
+                  <li>If it doesn't load, the router may keep Wi-Fi devices apart. Turn off <strong>AP isolation</strong> / <strong>client isolation</strong> in the router, and don't use the <strong>guest</strong> Wi-Fi for gate devices.</li>
+                  <li>Give this PC a fixed address in the router (<strong>DHCP reservation</strong>). Phones search for it if the address changes, but a fixed one finds it instantly.</li>
+                </ol>
+              </details>
             </div>
           </div>
         </section>
@@ -524,7 +573,7 @@
             </div>
             <div class="panel">
               <h3>Gateway address</h3>
-              <p class="desc">Only change this if VillaSafe support asks you to. The bridge never needs any passwords or keys.</p>
+              <p class="desc">Only change this if VillaSafe support asks you to.</p>
               <div class="inline">
                 <div class="field">
                   <label for="gatewayUrl">Gateway URL</label>
@@ -548,6 +597,7 @@
     const ICON_CLOSE = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m6 9 6 6 6-6"/></svg>';
 
     let paired = false;
+    let locked = false;
     let currentPage = null;
     let laneSignature = '';
     let unseenActivity = 0;
@@ -568,10 +618,12 @@
       document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === `page-${page}`));
       document.querySelectorAll('.rail-btn').forEach((b) => b.classList.toggle('active', b.dataset.page === page));
       if (page === 'activity') { unseenActivity = 0; updateBadge(); }
+      if (page === 'offline') refreshFirewall();
     }
     document.querySelectorAll('.rail-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
         if (!paired && btn.dataset.page !== 'health') return show('pair');
+        if (locked && !['health', 'settings'].includes(btn.dataset.page)) return show('licence');
         show(btn.dataset.page);
       });
     });
@@ -595,7 +647,7 @@
 
     // ---------- Activity feed ----------
     const feed = [];
-    const LABELS = { open: 'Gate opened', close: 'Gate closed', schedule: 'Schedule ran', 'lan-scan': 'Phone scan', scan: 'Scan', rfid: 'Tag read', anpr: 'Plate read' };
+    const LABELS = { licence: 'Desktop licence', open: 'Gate opened', close: 'Gate closed', schedule: 'Schedule ran', 'lan-scan': 'Phone scan', scan: 'Scan', rfid: 'Tag read', anpr: 'Plate read' };
     const KINDS = { anpr: 'plate camera', barrier: 'barrier', turnstile: 'turnstile', controller: 'door controller', relay: 'relay', rfid: 'tag reader' };
     function describe(action, success = true) {
       if (!action) return 'Bridge event';
@@ -717,8 +769,16 @@
       $('setGateway').textContent = status.gateway || 'VillaSafe gateway';
       if (!$('gatewayUrl').matches(':focus')) $('gatewayUrl').value = cfg.gatewayUrl || '';
 
+      const wasLocked = locked;
+      locked = paired && !!status.licence?.locked;
+      if (locked) $('licenceWhy').textContent = status.licence.message || "VillaSafe hasn't confirmed a desktop licence for this estate.";
+
       if (!paired) {
         if (currentPage !== 'health') show('pair');
+      } else if (locked) {
+        if (!['health', 'settings', 'licence'].includes(currentPage)) show('licence');
+      } else if (wasLocked && currentPage === 'licence') {
+        show('gates');
       } else if (!wasPaired && (currentPage === 'pair' || !document.querySelector('.page.active'))) {
         show('gates');
       }
@@ -726,7 +786,8 @@
       // Connection chip
       const online = paired && status.online !== false;
       $('connDot').className = `dot ${!paired ? '' : online ? 'ok' : 'bad'}`;
-      $('connText').textContent = !paired ? 'Not paired' : online ? 'Online' : 'No internet';
+      $('connText').textContent = !paired ? 'Not paired' : locked ? 'Licence needed' : online ? 'Online' : 'No internet';
+      if (locked) $('connDot').className = 'dot bad';
       $('heartbeat').innerHTML = !paired ? 'Not paired yet.' : online
         ? `<span style="color:#7ee2a8">Connected.</span> Checking in with VillaSafe every few seconds.`
         : `<span style="color:#ff9a9d">Can't reach VillaSafe:</span> ${esc(status.lastError || 'no response')}. Retrying every 5 seconds. If this lasts more than a few minutes, unpair and pair again with a new code.`;
@@ -741,7 +802,8 @@
       const lanReady = !!lan.hasKey && (lan.passes > 0 || !!lan.passesAt);
       $('lanChip').hidden = !paired;
       $('lanDot').className = `dot ${lanReady ? (lan.stale ? 'warn' : 'ok') : ''}`;
-      $('lanText').textContent = lanReady ? `${lan.passes} passes offline` : 'Offline scanning not ready';
+      $('lanText').textContent = fwBlocked ? 'Phones blocked by firewall' : lanReady ? `${lan.passes} passes offline` : 'Offline scanning not ready';
+      if (fwBlocked) $('lanDot').className = 'dot bad';
       $('lanPasses').textContent = lan.passes || 0;
       $('lanStateDot').className = `dot ${lanReady ? (lan.stale ? 'warn' : 'ok') : ''}`;
       $('lanState').textContent = !lanReady ? 'Waiting for the first pass list from VillaSafe'
@@ -751,6 +813,11 @@
       $('lanPending').textContent = lan.pendingScans || 0;
       $('lanKey').textContent = lan.hasKey ? 'Received' : 'Not yet';
       $('lanPort').textContent = lan.port || 8787;
+      const addrs = (lan.addresses || []).filter((a) => a.kind !== 'virtual');
+      const kindLabel = (a) => (a.kind === 'wifi' ? 'Wi-Fi' : a.kind === 'ethernet' ? 'cable' : a.iface);
+      $('lanAddrs').textContent = addrs.length ? addrs.map((a) => `${a.address} (${kindLabel(a)})`).join(', ') : 'Not connected';
+      $('lanTestUrl').textContent = `http://${addrs[0]?.address || '<this PC>'}:${lan.port || 8787}/v1/health`;
+      if (currentPage === 'offline') refreshFirewall();
 
       if (paired) renderLanes(status);
     }
@@ -805,17 +872,24 @@
     };
     $('cancelPairBtn').onclick = () => {
       pendingCode = null;
+      $('pairLicence').value = '';
       $('pairStep2').hidden = true;
       $('pairStep1').hidden = false;
     };
     $('confirmPairBtn').onclick = async () => {
       if (!pendingCode) return;
+      const licenseKey = formatLicence($('pairLicence').value);
+      if (!licenseKey) return flagLicence($('pairLicence'), "Enter the estate's desktop licence key first");
       const btn = $('confirmPairBtn');
       btn.disabled = true;
       let r;
-      try { r = await window.bridge.pair(pendingCode); } catch (e) { r = { ok: false, error: e?.message }; }
+      try { r = await window.bridge.pair(pendingCode, licenseKey); } catch (e) { r = { ok: false, error: e?.message }; }
       btn.disabled = false;
-      if (!r.ok) return toast(`Pairing failed: ${r.error || 'try a new code'}`, 'err');
+      if (!r.ok) {
+        if (/licen[cs]e/i.test(r.error || '')) return flagLicence($('pairLicence'), r.error);
+        return toast(`Pairing failed: ${r.error || 'try a new code'}`, 'err');
+      }
+      $('pairLicence').value = '';
       toast(`Paired with ${r.tenantName}`, 'ok');
       addFeed({ kind: 'info', what: `Paired with ${r.tenantName}`, src: 'Setup' });
       pendingCode = null;
@@ -823,6 +897,84 @@
       $('pairStep1').hidden = false;
       digits.forEach((d) => { d.value = ''; });
       syncDigits();
+      await refresh();
+      show('gates');
+    };
+
+    // ---------- Guard phones on the network (Windows Firewall) ----------
+    let fwCheckedAt = 0;
+    let fwBlocked = false;
+    async function refreshFirewall(fresh = false) {
+      if (!window.bridge.firewallStatus || (!fresh && Date.now() - fwCheckedAt < 60_000)) return;
+      fwCheckedAt = Date.now();
+      let fw;
+      try { fw = await window.bridge.firewallStatus(fresh); } catch { return; }
+      const publicNet = (fw.profiles || []).find((p) => /public/i.test(p.category));
+      $('fwDot').className = `dot ${fw.state === 'ok' ? 'ok' : fw.state === 'blocked' ? 'bad' : 'warn'}`;
+      $('fwState').textContent = !fw.supported ? 'Firewall: nothing to set up on this system'
+        : fw.state === 'ok' ? 'Windows Firewall lets guard phones in on every network'
+        : fw.state === 'blocked' ? (fw.blockRules
+          ? 'Windows Firewall is blocking guard phones (from an earlier "Cancel" on its prompt)'
+          : `Windows Firewall is blocking guard phones — "${publicNet?.alias || 'this network'}" is marked Public`)
+        : 'Probably fine — press the button to make sure phones get in on Wi-Fi too';
+      $('allowPhonesBtn').hidden = !fw.supported || fw.state === 'ok';
+      fwBlocked = fw.state === 'blocked';
+    }
+    $('allowPhonesBtn').onclick = async () => {
+      const btn = $('allowPhonesBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin" style="width:16px;height:16px;border-width:2px"></span> Approve the Windows prompt…';
+      let r;
+      try { r = await window.bridge.allowGuardPhones(); } catch (e) { r = { ok: false, error: e?.message }; }
+      btn.disabled = false;
+      btn.textContent = 'Let guard phones in';
+      toast(r.ok ? 'Guard phones can now reach this PC' : r.error || 'Could not change the firewall', r.ok ? 'ok' : 'err');
+      fwCheckedAt = 0;
+      refreshFirewall(true);
+    };
+
+    // ---------- Licence ----------
+    // Keys look like VS-7KQ2M-4XH9P-TR3WD-8NBCE. Accept any spacing or case.
+    const LICENCE_CHARS = /[^ABCDEFGHJKMNPQRSTVWXYZ23456789]/;
+    function formatLicence(raw) {
+      let body = String(raw || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+      if (body.startsWith('VS') && body.length === 22) body = body.slice(2);
+      if (body.length !== 20 || LICENCE_CHARS.test(body)) return '';
+      return `VS-${body.match(/.{5}/g).join('-')}`;
+    }
+    function flagLicence(input, message) {
+      input.classList.remove('bad');
+      void input.offsetWidth; // restart the shake
+      input.classList.add('bad');
+      input.focus();
+      toast(message, 'err');
+    }
+    document.querySelectorAll('.licence-input').forEach((input) => {
+      input.addEventListener('input', () => {
+        input.classList.remove('bad');
+        if (input.id === 'lockLicence') $('activateBtn').disabled = !formatLicence(input.value);
+      });
+      input.addEventListener('blur', () => { const f = formatLicence(input.value); if (f) input.value = f; });
+      input.addEventListener('keydown', (e) => {
+        if (e.key !== 'Enter') return;
+        if (input.id === 'lockLicence') $('activateBtn').click();
+        else $('confirmPairBtn').click();
+      });
+    });
+    $('activateBtn').onclick = async () => {
+      const licenseKey = formatLicence($('lockLicence').value);
+      if (!licenseKey) return flagLicence($('lockLicence'), "That doesn't look like a licence key");
+      const btn = $('activateBtn');
+      btn.disabled = true;
+      btn.innerHTML = '<span class="spin" style="width:16px;height:16px;border-width:2px"></span> Checking with VillaSafe…';
+      let r;
+      try { r = await window.bridge.activateLicense(licenseKey); } catch (e) { r = { ok: false, error: e?.message }; }
+      btn.textContent = 'Unlock this PC';
+      btn.disabled = false;
+      if (!r.ok) return flagLicence($('lockLicence'), r.error || 'VillaSafe did not accept that key');
+      $('lockLicence').value = '';
+      toast('Licence accepted — gates unlocked', 'ok');
+      addFeed({ kind: 'ok', what: 'Desktop licence accepted', src: 'Setup' });
       await refresh();
       show('gates');
     };
@@ -852,6 +1004,7 @@
       btn.textContent = 'Run again';
       if (!lastDiag) return;
       $('copyDiag').disabled = false;
+      const sdkStep = (lastDiag.steps || []).find((s) => s.id === 'hikvision' && !s.ok);
       const row = (ok, title, hint, i) => `
         <li class="check ${ok ? 'ok' : 'fail'}" style="animation-delay:${i * 40}ms">
           <span class="mark">${ok ? '✓' : '!'}</span>
@@ -867,11 +1020,20 @@
         </div>
         <div class="section-label">Connection</div>
         <ul class="checks">${steps}</ul>
+        ${sdkStep ? '<button class="btn ghost" id="retrySdkBtn" style="margin-top:10px">Retry SDK</button>' : ''}
         <div class="section-label">Gate devices</div>
         ${devs ? `<ul class="checks">${devs}</ul>` : '<p class="page-sub">No devices set up yet.</p>'}
         <div class="section-label">Recent log</div>
         <pre class="logs">${esc((lastDiag.logs || []).slice(-40).join('\n') || 'No log lines yet.')}</pre>`;
     };
+    document.addEventListener('click', async (e) => {
+      if (e.target?.id !== 'retrySdkBtn') return;
+      e.target.disabled = true;
+      const r = await window.bridge.reloadSdk();
+      const loaded = r.ok && r.sdk?.loaded;
+      toast(loaded ? 'Hikvision SDK loaded' : `Still not loaded: ${r.sdk?.lastError?.message || r.error || 'unknown error'}`, loaded ? 'ok' : 'err');
+      $('diagBtn').click();
+    });
     $('copyDiag').onclick = async () => {
       if (!lastDiag) return;
       await navigator.clipboard.writeText(JSON.stringify(lastDiag, null, 2));
@@ -910,6 +1072,8 @@
 
     refresh();
     setInterval(refresh, 5000);
+    refreshFirewall().then(refresh);
+    setInterval(() => refreshFirewall(), 10 * 60_000);
   </script>
 </body>
 </html>

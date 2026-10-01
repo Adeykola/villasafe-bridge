@@ -41,7 +41,8 @@ function evaluateAllowList(device, uid) {
   const list = (c.allowList || []).map((s) => String(s).toUpperCase());
   // Returns { blocked, logOnly }.
   if (mode === 'allow_only_listed') {
-    return { blocked: list.length > 0 ? !list.includes(uid) : false, logOnly: false };
+    // An empty list means nothing is approved — never "let everyone in".
+    return { blocked: !list.includes(uid), logOnly: false };
   }
   if (mode === 'log_only') return { blocked: false, logOnly: true };
   return { blocked: false, logOnly: false };
@@ -169,4 +170,4 @@ async function probe(device) {
   return { ok: true, message: `RFID reader (${mode}, ${c.frameFormat || 'ascii-line'}) ${detail}` };
 }
 
-module.exports = { startReader, stopAll, probe, run: async () => ({ ok: true }) };
+module.exports = { startReader, stopAll, probe, run: async () => ({ ok: true }), _internal: { evaluateAllowList } };

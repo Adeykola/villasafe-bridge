@@ -65,7 +65,12 @@ async function safeFetch(url, body) {
   catch {
     throw new Error(`HTTP ${res.status}: gateway returned invalid JSON (content-type: ${contentType}, body: ${text.slice(0, 80)})`);
   }
-  if (!res.ok) throw new Error(`${data?.error || `HTTP ${res.status}`}${data?.hint ? ` — ${data.hint}` : ''}`);
+  if (!res.ok) {
+    const err = new Error(`${data?.error || `HTTP ${res.status}`}${data?.hint ? ` — ${data.hint}` : ''}`);
+    err.status = res.status;
+    err.data = data;
+    throw err;
+  }
   return data;
 }
 
@@ -95,6 +100,9 @@ async function callWithFallback(primary, path, body) {
       }
       return { data, gatewayUsed: base };
     } catch (e) {
+      // A licence refusal is VillaSafe's real answer, not an unreachable
+      // gateway — trying a fallback would only bury it under another error.
+      if (licenceError(e)) throw e;
       tried.push(`${displayGateway(base)}: ${userMessage(e.message)}`);
       lastErr = e;
     }
@@ -117,12 +125,12 @@ async function previewPairing(gatewayUrl, code) {
   }
 }
 
-async function pairWithCode(gatewayUrl, code, publicKey) {
+async function pairWithCode(gatewayUrl, code, publicKey, licenseKey) {
   try {
     const health = await gatewayHealth(gatewayUrl);
     if (!health.ok) throw new Error(health.error || 'VillaSafe gateway is not ready');
     const { data } = await callWithFallback(gatewayUrl, '/pair-gate-bridge', {
-      code, hostname: os.hostname(), version: BRIDGE_VERSION, publicKey,
+      code, hostname: os.hostname(), version: BRIDGE_VERSION, publicKey, licenseKey,
     });
     return {
       ok: true,
@@ -134,8 +142,34 @@ async function pairWithCode(gatewayUrl, code, publicKey) {
       lanes: data.lanes || [],
     };
   } catch (e) {
-    return { ok: false, error: e.message };
+    return { ok: false, error: licenceMessage(e) || e.message };
   }
 }
 
-module.exports = { pairWithCode, previewPairing, safeFetch, callWithFallback, gatewayHealth, cleanBase, BRIDGE_VERSION };
+/** The licence refusal the gateway sent, if that's why a call failed. */
+function licenceError(e) {
+  const data = e?.data || e?.cause?.data;
+  return data && /^licence_/.test(String(data.error || '')) ? data : null;
+}
+
+function licenceMessage(e) {
+  const data = licenceError(e);
+  return data ? (data.message || 'This estate needs a VillaSafe desktop licence key.') : null;
+}
+
+/**
+ * Unlock a PC that is already paired, using the estate's licence key — after
+ * VillaSafe issues a new key, or on a PC paired before licences existed.
+ */
+async function activateLicense(gatewayUrl, { bridgeId, bridgeToken, licenseKey }) {
+  try {
+    const { data } = await callWithFallback(gatewayUrl, '/pair-gate-bridge', {
+      activateLicense: true, bridgeId, bridgeToken, licenseKey, hostname: os.hostname(), version: BRIDGE_VERSION,
+    });
+    return { ok: true, tenantName: data.tenantName };
+  } catch (e) {
+    return { ok: false, error: licenceMessage(e) || e.message };
+  }
+}
+
+module.exports = { activateLicense, licenceError, licenceMessage, pairWithCode, previewPairing, safeFetch, callWithFallback, gatewayHealth, cleanBase, BRIDGE_VERSION };

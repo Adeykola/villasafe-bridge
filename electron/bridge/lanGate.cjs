@@ -6,7 +6,7 @@
 // decides locally, opens the lane straight away, and queues the check-in for
 // upload — all without internet.
 //
-//   GET  /v1/health                → { ok, version, passes, passesAt, stale }
+//   GET  /v1/health                → { ok, bridgeId, version, passes, passesAt, stale }
 //   POST /v1/scan  { code | guestId, laneId, expect? } → decision (+ opens the lane when allowed)
 //   POST /v1/open  { laneId, side } → manual open by a signed-in guard
 //   GET  /v1/lanes                  → lanes guards can pick
@@ -19,11 +19,12 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const diagnostics = require('./diagnostics.cjs');
+const lanReach = require('./lanReach.cjs');
 
 const DIR = path.join(os.homedir(), '.villasafe-gate-bridge');
 const PASSES_FILE = path.join(DIR, 'passes.json');
 const SCANS_FILE = path.join(DIR, 'lan-scans.json');
-const PORT = 8787;
+const PORT = lanReach.PORT;
 const REFRESH_MS = 60_000;
 
 let state = {
@@ -106,7 +107,8 @@ function decide(pass, lane, at = Date.now()) {
   if (!inside && pass.is_revoked) return { action: 'deny', title: 'Code Revoked', reason: 'This guest code has been revoked' };
   if (!inside && new Date(pass.valid_from).getTime() > at) return { action: 'deny', title: 'Not Yet Valid', reason: `Valid from ${new Date(pass.valid_from).toLocaleString()}` };
   if (!inside && expiryOf(pass) < at) return { action: 'deny', title: 'Expired Code', reason: 'This guest code has expired' };
-  if (!inside && pass.status === 'checked-out') return { action: 'deny', title: 'Already Checked Out', reason: `${pass.name} has already checked out` };
+  // Recurring passes (regular visitors, contractors) come and go until they expire.
+  if (!inside && pass.status === 'checked-out' && pass.access_type !== 'recurring') return { action: 'deny', title: 'Already Checked Out', reason: `${pass.name} has already checked out` };
 
   const allowed = pass.allowed_lane_ids || [];
   if (lane && allowed.length && !allowed.includes(lane.id)) {
@@ -191,15 +193,14 @@ function requeueScans(scans) {
   persistScans();
 }
 
-/** LAN addresses to announce; sent when they change or every 30 minutes. */
+/**
+ * LAN addresses to announce, best first (phones try them in this order), sent
+ * when they change — e.g. the PC moves from cable to Wi-Fi or DHCP hands it a
+ * new address — or every 30 minutes.
+ */
 function announcement() {
-  const addresses = [];
-  for (const list of Object.values(os.networkInterfaces())) {
-    for (const a of list || []) {
-      if (a.family === 'IPv4' && !a.internal) addresses.push(a.address);
-    }
-  }
-  const sig = addresses.sort().join(',');
+  const addresses = lanReach.lanAddresses().map((a) => a.address);
+  const sig = addresses.join(',');
   if (!addresses.length) return null;
   if (sig === lastAnnounce.sig && Date.now() - lastAnnounce.at < 30 * 60_000) return null;
   lastAnnounce = { sig, at: Date.now() };
@@ -230,7 +231,7 @@ function readBody(req) {
   });
 }
 
-function start(cfg, { getLanes, openLane, isOnline, onEvent, version }) {
+function start(cfg, { getLanes, openLane, isOnline, isLicensed = () => true, onEvent, version }) {
   stop();
   load(cfg);
 
@@ -239,12 +240,19 @@ function start(cfg, { getLanes, openLane, isOnline, onEvent, version }) {
     const url = new URL(req.url, 'http://bridge');
 
     if (req.method === 'GET' && url.pathname === '/v1/health') {
-      return send(res, 200, { ok: true, version, passes: state.passes.size, passesAt: state.passesAt, stale: isStale(), online: isOnline() });
+      // bridgeId lets a phone that lost this PC's address recognise it again.
+      return send(res, 200, { ok: true, bridgeId: state.bridgeId, version, passes: state.passes.size, passesAt: state.passesAt, stale: isStale(), online: isOnline() });
     }
 
     const auth = verifyToken(req.headers.authorization);
     if (auth.error) return send(res, 401, { error: auth.error });
     const guard = auth.claims;
+
+    // Without a desktop licence this PC can't open lanes or record check-ins;
+    // guard devices fall back to checking in through VillaSafe.
+    if (req.method === 'POST' && !isLicensed()) {
+      return send(res, 503, { error: 'This gate PC is locked until the estate enters its VillaSafe desktop licence key.' });
+    }
 
     if (req.method === 'GET' && url.pathname === '/v1/lanes') {
       return send(res, 200, { lanes: (getLanes() || []).map((l) => ({ id: l.id, name: l.name, direction: l.direction || 'bidirectional' })) });
@@ -329,7 +337,7 @@ function stop() {
 }
 
 function getLanStatus() {
-  return { port: PORT, passes: state.passes.size, passesAt: state.passesAt, stale: isStale(), pendingScans: pendingScans.length, hasKey: !!state.lanSecret };
+  return { port: PORT, addresses: lanReach.lanAddresses(), passes: state.passes.size, passesAt: state.passesAt, stale: isStale(), pendingScans: pendingScans.length, hasKey: !!state.lanSecret };
 }
 
 module.exports = {

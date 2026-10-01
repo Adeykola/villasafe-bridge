@@ -44,6 +44,13 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.0** — Desktop licence: the estate's `VS-…` licence key is entered
+  when pairing, and a paired PC that VillaSafe hasn't licensed locks its lanes
+  and asks for the key on its own screen. v1.1.0 and older have no key field,
+  so they must be updated to this version to keep working. Also: the
+  Hikvision (HCNetSDK) service is built into the app, RFID tags are kept on
+  the PC with suspend, renew and expiry, and guard phones can reach the PC
+  over Wi-Fi as well as cable.
 - **v1.1.0** — Redesigned app: big Open/Close buttons per lane with live
   device health, a live activity feed, a readable health check, and a guided
   6-digit pairing screen. New offline scanning: the bridge keeps the estate's

@@ -1,6 +1,8 @@
 const os = require('os');
 const { probeDriver } = require('../drivers/index.cjs');
+const hikvision = require('../drivers/hikvision.cjs');
 const { gatewayHealth } = require('./pairing.cjs');
+const lanReach = require('./lanReach.cjs');
 
 const logBuffer = [];
 function log(line) {
@@ -31,6 +33,41 @@ async function runFull(cfg, lanes) {
   steps.push({ id: 'pair', label: 'Bridge paired',
     ok: !!(cfg.bridgeId && cfg.bridgeToken),
     hint: 'Enter the 6-digit pairing code from VillaSafe → Gate Bridges.' });
+
+  if (cfg.bridgeId) {
+    steps.push({ id: 'licence', label: 'Desktop licence accepted by VillaSafe',
+      ok: !cfg.licenseLock,
+      hint: cfg.licenseLock?.message || 'Ask VillaSafe for this estate\'s desktop licence key and enter it on the Gates page.' });
+  }
+
+  // Guard phones reach this PC on port 8787 over cable or Wi-Fi.
+  const lanAddrs = lanReach.lanAddresses().filter((a) => a.kind !== 'virtual');
+  steps.push({ id: 'lan-address', label: lanAddrs.length
+      ? `On the estate network: ${lanAddrs.map((a) => `${a.address} (${a.kind === 'wifi' ? 'Wi-Fi' : a.kind === 'ethernet' ? 'cable' : a.iface})`).join(', ')}`
+      : 'On the estate network',
+    ok: lanAddrs.length > 0,
+    hint: 'This PC has no network address. Connect it to the estate router by cable or Wi-Fi.' });
+  const fw = await lanReach.firewallStatus({ fresh: true });
+  if (fw.supported) {
+    steps.push({ id: 'lan-firewall', label: 'Windows Firewall lets guard phones in',
+      ok: fw.state !== 'blocked',
+      hint: 'Windows Firewall is blocking phones on this network (common on Wi-Fi marked "Public"). Open Offline scanning and press "Let guard phones in".' });
+  }
+
+  // The Hikvision service runs inside this app; the SDK itself is the part a
+  // PC can be missing. Only a failure when a lane actually uses Hikvision.
+  const usesHikvision = lanes.some((l) => (l.devices || []).some((d) => d.driver === 'hikvision'));
+  const h = await hikvision.bridgeHealth();
+  const sdk = h.body?.sdk;
+  if (!h.reachable) {
+    steps.push({ id: 'hikvision', label: 'Hikvision service running', ok: !usesHikvision,
+      hint: 'The built-in Hikvision service did not start. Restart the Gate Bridge app; if it persists, send this report to support.' });
+  } else {
+    steps.push({ id: 'hikvision', label: sdk?.loaded ? 'Hikvision SDK loaded' : usesHikvision ? 'Hikvision SDK loaded' : 'Hikvision SDK not installed (no Hikvision devices, so not needed)',
+      ok: !!sdk?.loaded || !usesHikvision,
+      hint: `Copy the whole Hikvision HCNetSDK folder into ${sdk?.folder || 'the hcnetsdk folder'}, then press Retry SDK.` +
+        (sdk?.lastError?.message ? ` (${sdk.lastError.message})` : '') });
+  }
 
   const deviceProbes = [];
   for (const lane of lanes) {
@@ -66,6 +103,7 @@ function hintFor(driver, result) {
   if (driver === 'tcp') return 'Ping the controller IP. Open the configured TCP port on Windows Firewall / router.';
   if (driver === 'modbus') return 'Verify RS-485 A/B wiring (not swapped), 120Ω termination, matching baud rate, correct slave ID.';
   if (driver === 'wiegand') return 'Plug the Wiegand-to-serial adapter into a USB 2.0 port and install its driver.';
+  if (driver === 'hikvision') return 'Ping the controller, use SDK port 8000 (not 80), and check the admin password and door number in the Lane wizard.';
   return 'Recheck driver parameters in the Lane wizard.';
 }
 

@@ -2,4 +2,6 @@ node_modules/
 release/
 dist/
 *.log
-.DS_Store
+.DS_Store# Hikvision SDK binaries are licensed per customer; never commit them.
+vendor/hcnetsdk/**
+!vendor/hcnetsdk/README.md
