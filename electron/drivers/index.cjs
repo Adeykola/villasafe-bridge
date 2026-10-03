@@ -15,10 +15,12 @@ async function runDriver(device, action, opts = {}) {
   return drv.run(device, action, opts);
 }
 
-async function probeDriver(device) {
+// opts.background marks the automatic health check (drivers that log in, like
+// Hikvision, then never retry a password the controller refused).
+async function probeDriver(device, opts = {}) {
   const drv = drivers[device.driver];
   if (!drv || !drv.probe) return { ok: false, error: 'No probe for driver ' + device.driver };
-  try { return await drv.probe(device); } catch (e) { return { ok: false, error: e.message }; }
+  try { return await drv.probe(device, opts); } catch (e) { return { ok: false, error: e.message }; }
 }
 
 module.exports = { runDriver, probeDriver };

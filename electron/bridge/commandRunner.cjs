@@ -166,7 +166,7 @@ async function refreshDeviceHealthInner() {
       const d = lane.devices[i];
       const r = d.driver === 'rfid'
         ? await rfid.probe(d)
-        : await probeDriver(d);
+        : await probeDriver(d, { background: true });
       next.push({
         lane_id: lane.id,
         device_index: i,

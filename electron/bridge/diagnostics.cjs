@@ -103,7 +103,11 @@ function hintFor(driver, result) {
   if (driver === 'tcp') return 'Ping the controller IP. Open the configured TCP port on Windows Firewall / router.';
   if (driver === 'modbus') return 'Verify RS-485 A/B wiring (not swapped), 120Ω termination, matching baud rate, correct slave ID.';
   if (driver === 'wiegand') return 'Plug the Wiegand-to-serial adapter into a USB 2.0 port and install its driver.';
-  if (driver === 'hikvision') return 'Ping the controller, use SDK port 8000 (not 80), and check the admin password and door number in the Lane wizard.';
+  if (driver === 'hikvision') {
+    // Login refusals already carry their own fix (wrong password, locked, not activated…).
+    if (/\(code: (WRONG_PASSWORD|ACCOUNT_LOCKED|UNKNOWN_USER|NOT_ACTIVATED|TOO_MANY_CONNECTIONS|SDK_MISMATCH)\)/.test(result.error || '')) return null;
+    return 'Check this PC reaches the controller on SDK port 8000 (not 80) — Hikvision controllers often ignore ping — and check the admin password and door number in the Lane wizard.';
+  }
   return 'Recheck driver parameters in the Lane wizard.';
 }
 

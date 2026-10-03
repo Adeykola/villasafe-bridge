@@ -6,7 +6,8 @@ const deviceInfo = require('../drivers/hikvision/deviceInfo');
 async function list() { return repo.list(); }
 async function upsert(input) { return repo.upsert(input); }
 async function remove(id) { await registry.disconnect(id); repo.remove(id); }
-async function connect(id) { const s = await registry.ensure(id); return s.status(); }
+// background: an automatic health check, which never retries a refused password.
+async function connect(id, { background = false } = {}) { const s = await registry.ensure(id, { background }); return s.status(); }
 async function disconnect(id) { await registry.disconnect(id); return { id, online: false }; }
 async function status() { return registry.status(); }
 async function info(id) {

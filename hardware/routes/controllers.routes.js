@@ -29,13 +29,18 @@ router.post('/', async (req, res, next) => {
 
     let connection = null;
 
-    try {
-      connection = await svc.connect(controller.id);
-    } catch (err) {
-      connection = {
-        online: false,
-        ...err.toJSON?.()
-      };
+    // The Gate Bridge registers the controller before every command and
+    // connects in its next request, so it passes connect: false — one login
+    // per command instead of two.
+    if (req.body.connect !== false) {
+      try {
+        connection = await svc.connect(controller.id);
+      } catch (err) {
+        connection = {
+          online: false,
+          ...err.toJSON?.()
+        };
+      }
     }
 
     res.json({
@@ -48,7 +53,9 @@ router.post('/', async (req, res, next) => {
   }
 });
 router.delete('/:id', async (req, res, next) => { try { await svc.remove(req.params.id); res.json({ ok: true }); } catch (e) { next(e); } });
-router.post('/:id/connect', async (req, res, next) => { try { res.json(await svc.connect(req.params.id)); } catch (e) { next(e); } });
+router.post('/:id/connect', async (req, res, next) => {
+  try { res.json(await svc.connect(req.params.id, { background: req.body?.background === true })); } catch (e) { next(e); }
+});
 router.post('/:id/disconnect', async (req, res, next) => { try { res.json(await svc.disconnect(req.params.id)); } catch (e) { next(e); } });
 router.post('/:id/restart', async (req, res, next) => { try { res.json(await svc.restart(req.params.id)); } catch (e) { next(e); } });
 router.get('/status', async (_req, res, next) => { try { res.json(await svc.status()); } catch (e) { next(e); } });

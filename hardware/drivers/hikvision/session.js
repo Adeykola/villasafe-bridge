@@ -1,6 +1,6 @@
 // Per-controller SDK session — login, heartbeat, auto-reconnect.
 const sdkLoader = require('./sdkLoader');
-const { human } = require('./errors');
+const { describeLogin } = require('./errors');
 const { BridgeError } = require('../../utils/errorMap');
 const log = require('../../logger');
 
@@ -82,11 +82,15 @@ log.info(
   'NET_DVR_Login_V40 returned'
 );
     if (uid < 0) {
-      const code = api.NET_DVR_GetLastError();
-      const msg = human(code);
+      const sdkCode = api.NET_DVR_GetLastError();
+      const d = describeLogin(sdkCode, `${this.controller.ip}:${this.controller.sdkPort || 8000}`);
       this.online = false;
-      this.lastError = { code, message: msg };
-      throw new BridgeError('LOGIN_FAILED', msg, `SDK error ${code} from ${this.controller.ip}:${this.controller.sdkPort || 8000}.`);
+      this.lastError = { code: sdkCode, message: d.message };
+      const err = new BridgeError(d.code, d.message, d.hint);
+      // Refused for its credentials: retrying the same password only locks the controller.
+      err.credential = d.credential;
+      err.sdkCode = Number(sdkCode);
+      throw err;
     }
     this.userId = uid;
     this.online = true;
@@ -135,7 +139,11 @@ log.info(
     this._reconnectTimer = setTimeout(async () => {
       this._reconnectTimer = null;
       try { await this.disconnect(); await this.connect(); }
-      catch (e) { log.warn('Reconnect failed', { controllerId: this.controller.id, error: e.message }); this._scheduleReconnect(); }
+      catch (e) {
+        log.warn('Reconnect failed', { controllerId: this.controller.id, error: e.message });
+        // A refused password stays refused; retrying it would lock the controller.
+        if (!e.credential) this._scheduleReconnect();
+      }
     }, delay);
   }
 

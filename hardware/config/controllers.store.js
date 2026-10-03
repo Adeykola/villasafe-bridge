@@ -23,9 +23,25 @@ function get(id) {
   if (!row) return null;
   return { ...row, password: decrypt(row.password) };
 }
+function samePassword(stored, plain) {
+  try { return decrypt(stored) === (plain || ''); } catch { return false; }
+}
 function upsert(input) {
   const rows = read();
   const id = input.id || crypto.randomUUID();
+  // The bridge re-registers each controller before every command and health
+  // check; leave the file alone when nothing changed.
+  const current = rows.find(r => r.id === id);
+  if (
+    current &&
+    current.name === input.name &&
+    current.ip === input.ip &&
+    (current.sdkPort || 8000) === (input.sdkPort || 8000) &&
+    current.username === (input.username || 'admin') &&
+    (input.password === undefined || samePassword(current.password, input.password))
+  ) {
+    return { ...current, password: undefined };
+  }
   const encPwd = input.password !== undefined ? encrypt(input.password) : (rows.find(r => r.id === id)?.password || null);
   const next = {
     id,

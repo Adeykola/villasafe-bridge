@@ -146,6 +146,9 @@ async function ensureController(params) {
     sdkPort: Number(params.sdkPort || params.port || 8000),
     username: params.username || 'admin',
     password: params.password || '',
+    // The next request logs in; logging in here too would spend two of the
+    // controller's few password tries on every command.
+    connect: false,
   });
   return id;
 }
@@ -168,11 +171,14 @@ async function run(device, action, opts = {}) {
   }
 }
 
-async function probe(device) {
+// opts.background: the automatic health check — it never retries a refused password.
+async function probe(device, opts = {}) {
   try {
     const params = device.params || {};
     const controllerId = await ensureController(params);
-    const r = await bridgeRequest('POST', `/api/controller/${encodeURIComponent(controllerId)}/connect`, {});
+    const r = await bridgeRequest('POST', `/api/controller/${encodeURIComponent(controllerId)}/connect`, {
+      background: !!opts.background,
+    });
     const info = (r && r.deviceInfo && (r.deviceInfo.byDVRType || r.deviceInfo.serialNumber))
       ? `Hikvision online at ${params.host} (SDK ${params.sdkPort || 8000})`
       : `Hikvision online at ${params.host}`;
