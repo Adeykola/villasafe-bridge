@@ -44,6 +44,14 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.3** — The long-range reader says what's wrong instead of failing
+  silently: a serial port that isn't on the PC (listing the ports that are),
+  a port another program holds, a pulled cable, or data with no tag numbers
+  in it. This shows on the bridge, in Gate Bridges and on VillaSafe's Gate
+  reader page and Scan card. A reader that can't open keeps retrying, so
+  plugging the cable in later just works; if the lane names a port the PC
+  doesn't have and there's one USB serial port, that one is used; and the
+  reader's ASCII or native output is detected by itself.
 - **v1.2.2** — Card reads reach VillaSafe within about a second, so a card
   held to the gate reader can be enrolled to a resident from VillaSafe's Scan
   card, and the Gate reader page shows each read live. A resident whose next

@@ -745,7 +745,7 @@
       document.querySelectorAll('[data-dev]').forEach((el) => {
         const h = health[el.dataset.dev];
         el.querySelector('.dot').className = `dot ${h?.status === 'online' ? 'ok' : h?.status === 'error' ? 'bad' : ''}`;
-        el.title = h?.status === 'error' ? (h.last_error || 'Device error') : h?.status === 'online' ? 'Responding' : 'Not checked yet';
+        el.title = h?.status === 'error' ? (h.last_error || 'Device error') : h?.status === 'online' ? (h.last_error || 'Responding') : 'Not checked yet';
       });
       $('offlineBanner').innerHTML = status.online === false ? `
         <div class="banner">

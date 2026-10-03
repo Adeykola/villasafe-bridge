@@ -48,20 +48,6 @@ function evaluateAllowList(device, uid) {
   return { blocked: false, logOnly: false };
 }
 
-function startReader(device, onTagSeen) {
-  const wrapped = (uid, dev) => {
-    if (!uid) return;
-    if (shouldDebounce(device, uid)) return;
-    const { blocked, logOnly } = evaluateAllowList(device, uid);
-    try { onTagSeen(uid, dev, { blocked, logOnly }); } catch {}
-  };
-  const c = cfg(device);
-  const mode = String(c.mode || 'tcp').toLowerCase();
-  if (mode === 'tcp' || mode === 'tcp_push') return startTcp(device, wrapped);
-  if (mode === 'serial' || mode === 'serial_wiegand' || mode === 'serial_aba') return startSerial(device, wrapped);
-  throw new Error('Unknown RFID mode: ' + mode);
-}
-
 // -------- Frame parsers --------
 // Return { epcs: string[], rest: Buffer } given a Buffer and a frame format.
 function parseFrames(buf, frameFormat) {
@@ -142,46 +128,247 @@ function parseS4ABinary(buf) {
   return { epcs, rest: rest.length > MAX_PENDING ? rest.slice(rest.length - MAX_PENDING) : rest };
 }
 
-function startTcp(device, onTagSeen) {
-  const c = cfg(device);
-  const port = Number(c.tcpPort || c.port || 9090);
-  const frameFormat = c.frameFormat || 'ascii-line';
-  const server = net.createServer((sock) => {
-    let buf = Buffer.alloc(0);
-    sock.on('data', (chunk) => {
-      buf = Buffer.concat([buf, chunk]);
-      const { epcs, rest } = parseFrames(buf, frameFormat);
-      buf = rest;
-      for (const uid of epcs) { try { onTagSeen(uid, device); } catch {} }
-    });
-    sock.on('error', () => {});
-  });
-  server.on('error', () => {});
-  server.listen(port, () => {});
-  activeServers.push(server);
-  return { ok: true, mode: 'tcp', port, frameFormat };
+// -------- Connections, and what each reader is doing --------
+// Every reader keeps a status (keyed by where it's plugged in), so the bridge
+// screen and VillaSafe can say exactly what's wrong — port not on this PC,
+// port busy, cable pulled, data arriving but no tag numbers — instead of the
+// reader failing silently. A serial reader that can't open keeps retrying, so
+// plugging the cable in later just works.
+
+let RETRY_MS = 5000;
+// This much data with no tag number in it means the settings don't match the reader.
+const NO_TAGS_AFTER_BYTES = 120;
+const readers = new Map(); // key → status
+const statusListeners = new Set();
+let SerialPortImpl = null; // tests swap in a fake
+
+function serialPortClass() {
+  if (SerialPortImpl) return SerialPortImpl;
+  try { return require('serialport').SerialPort; } catch { return null; }
 }
 
-function startSerial(device, onTagSeen) {
-  let SerialPort;
-  try { SerialPort = require('serialport').SerialPort; } catch { return { ok: false, error: 'serialport not installed' }; }
-  const c = cfg(device);
-  const path = c.port;
-  if (!path) return { ok: false, error: 'Serial port not set' };
-  const baudRate = Number(c.baud || c.baudRate || 115200);
-  const frameFormat = c.frameFormat || 'ascii-line';
-  let port;
-  try { port = new SerialPort({ path, baudRate }); } catch (e) { return { ok: false, error: e.message }; }
+const isTcp = (c) => ['tcp', 'tcp_push'].includes(String(c.mode || 'tcp').toLowerCase());
+const tcpPortOf = (c) => Number(c.tcpPort || c.port || 9090);
+const keyOf = (c) => (isTcp(c) ? `tcp:${tcpPortOf(c)}` : `serial:${String(c.port || '').toUpperCase()}`);
+
+function setStatus(st, patch) {
+  const before = `${st.state}|${st.error}|${st.path}|${st.format}`;
+  Object.assign(st, patch);
+  if (`${st.state}|${st.error}|${st.path}|${st.format}` !== before) {
+    for (const fn of statusListeners) { try { fn(st); } catch {} }
+  }
+}
+
+/**
+ * Which output the reader is set to, from what it has sent: printable text with
+ * line breaks is ASCII; binary bytes are the S4A's native frames. Null until clear.
+ */
+function detectFormat(buf) {
+  let lineBreak = false;
+  for (const b of buf) {
+    if (b === 0x0D || b === 0x0A || b === 0x03) { lineBreak = true; continue; }
+    if (b === 0x02 || b === 0x09) continue;
+    if (b < 0x20 || b > 0x7E) return 's4a-binary';
+  }
+  return lineBreak ? 'ascii-line' : null;
+}
+
+const formatName = (f) => (f === 's4a-binary' ? 'native binary' : 'ASCII');
+
+/** Feed incoming bytes through the parser, switching ASCII ↔ native if the reader is set the other way. */
+function makeFeeder(st, onTagSeen, device) {
   let buf = Buffer.alloc(0);
-  port.on('data', (chunk) => {
+  let sample = Buffer.alloc(0);
+  return (chunk) => {
     buf = Buffer.concat([buf, chunk]);
-    const { epcs, rest } = parseFrames(buf, frameFormat);
+    sample = Buffer.concat([sample, chunk]).subarray(-512);
+    st.bytes += chunk.length;
+    st.lastDataAt = Date.now();
+    let { epcs, rest } = parseFrames(buf, st.format);
+    if (!epcs.length && st.tags === 0) {
+      const seen = detectFormat(sample);
+      if (seen && seen !== st.format) {
+        const again = parseFrames(Buffer.concat([sample]), seen);
+        setStatus(st, { format: seen });
+        st.log?.(`RFID reader on ${st.where}: it sends ${formatName(seen)} output — reading it that way`);
+        ({ epcs, rest } = again);
+      }
+    }
     buf = rest;
-    for (const uid of epcs) { try { onTagSeen(uid, device); } catch {} }
+    if (epcs.length) {
+      st.tags += epcs.length;
+      st.lastTagAt = Date.now();
+      setStatus(st, { state: 'ok', error: null });
+      for (const uid of epcs) { try { onTagSeen(uid, device); } catch {} }
+    } else if (st.tags === 0 && st.bytes >= NO_TAGS_AFTER_BYTES && st.state !== 'no_tags') {
+      setStatus(st, {
+        state: 'no_tags',
+        error: `Data is arriving on ${st.where} but there are no tag numbers in it. Check the speed in the S4A tool matches the lane's Baud (${st.baud}).`,
+      });
+    }
+  };
+}
+
+const isBluetooth = (p) => /bluetooth|bthenum/i.test(`${p.friendlyName || ''} ${p.pnpId || ''} ${p.manufacturer || ''}`);
+// A USB serial adapter (or a reader's own USB) — not a laptop's built-in
+// virtual ports like Intel AMT's Serial-over-LAN, which have no USB IDs.
+const isUsb = (p) => !!p.vendorId || /^(USB|FTDIBUS)[\\]/i.test(String(p.pnpId || ''));
+const portLabel = (p) => `${p.path}${p.friendlyName || p.manufacturer ? ` (${String(p.friendlyName || p.manufacturer).replace(/\s*\(COM\d+\)\s*$/i, '')})` : ''}`;
+
+async function listPorts() {
+  const SerialPort = serialPortClass();
+  if (!SerialPort || !SerialPort.list) return [];
+  try { return await SerialPort.list(); } catch { return []; }
+}
+
+/** Plain-English reason a serial port wouldn't open. */
+function openErrorText(path, err, ports) {
+  const msg = String(err?.message || err || '');
+  const here = ports.filter((p) => !isBluetooth(p)).map(portLabel);
+  const list = here.length ? `Serial ports on this PC: ${here.join(', ')}.` : 'No serial ports found on this PC — check the cable and the USB adapter’s driver.';
+  if (/file not found|no such file|cannot find|ENOENT|unknown error code 2\b/i.test(msg)) {
+    return `${path} isn't on this PC. ${list} Set the lane's Serial port to the S4A's one (Device Manager → Ports).`;
+  }
+  if (/access denied|resource busy|EBUSY|cannot lock|locked/i.test(msg)) {
+    return `${path} is in use by another program. Close the S4A tool (or anything else using the port); the bridge will connect by itself.`;
+  }
+  if (/permission denied|EACCES/i.test(msg)) {
+    return `No permission to open ${path}. On Linux, add this user to the "dialout" group.`;
+  }
+  return `Couldn't open ${path}: ${msg}`;
+}
+
+function startReader(device, onTagSeen, opts = {}) {
+  const wrapped = (uid, dev) => {
+    if (!uid) return;
+    if (shouldDebounce(device, uid)) return;
+    const { blocked, logOnly } = evaluateAllowList(device, uid);
+    try { onTagSeen(uid, dev, { blocked, logOnly }); } catch {}
+  };
+  const c = cfg(device);
+  const mode = String(c.mode || 'tcp').toLowerCase();
+  if (isTcp(c)) return startTcp(device, wrapped, opts);
+  if (mode === 'serial' || mode === 'serial_wiegand' || mode === 'serial_aba') return startSerial(device, wrapped, opts);
+  throw new Error('Unknown RFID mode: ' + mode);
+}
+
+function newStatus(c, extra) {
+  return {
+    key: keyOf(c),
+    state: 'starting',
+    error: null,
+    format: String(c.frameFormat || 'ascii-line').toLowerCase() === 's4a-binary' ? 's4a-binary' : 'ascii-line',
+    bytes: 0,
+    tags: 0,
+    lastDataAt: null,
+    lastTagAt: null,
+    stopped: false,
+    ...extra,
+  };
+}
+
+function startTcp(device, onTagSeen, opts = {}) {
+  const c = cfg(device);
+  const port = tcpPortOf(c);
+  const st = newStatus(c, { mode: 'tcp', where: `TCP port ${port}`, path: null, baud: null, log: opts.log });
+  readers.set(st.key, st);
+  const server = net.createServer((sock) => {
+    setStatus(st, { state: st.tags ? 'ok' : 'waiting', error: null, peer: sock.remoteAddress });
+    const feed = makeFeeder(st, onTagSeen, device);
+    sock.on('data', feed);
+    sock.on('error', () => {});
   });
-  port.on('error', () => {});
-  activeServers.push({ close: () => { try { port.close(() => {}); } catch {} } });
-  return { ok: true, mode: 'serial', path, baudRate, frameFormat };
+  server.on('listening', () => setStatus(st, { state: 'waiting', error: null }));
+  server.on('error', (e) => setStatus(st, {
+    state: 'error',
+    error: e && e.code === 'EADDRINUSE'
+      ? `TCP port ${port} is already in use on this PC. Pick another port in the lane and in the S4A tool.`
+      : `Couldn't listen on TCP port ${port}: ${e && e.message}`,
+  }));
+  server.listen(port);
+  activeServers.push({ close: () => { st.stopped = true; readers.delete(st.key); try { server.close(() => {}); } catch {} } });
+  return { ok: true, mode: 'tcp', port, frameFormat: st.format };
+}
+
+function startSerial(device, onTagSeen, opts = {}) {
+  const c = cfg(device);
+  const configured = String(c.port || '').trim();
+  const baudRate = Number(c.baud || c.baudRate || 115200);
+  const st = newStatus(c, { mode: 'serial', where: configured || 'serial port', path: configured || null, baud: baudRate, log: opts.log });
+  readers.set(st.key, st);
+  const reserved = new Set((opts.reservedPorts || []).map((p) => String(p).toUpperCase()));
+  let port = null;
+  let retry = null;
+
+  const SerialPort = serialPortClass();
+  if (!SerialPort) {
+    setStatus(st, { state: 'error', error: 'This copy of the Gate Bridge is missing its serial-port support. Reinstall it from VillaSafe.' });
+    return { ok: false, error: st.error };
+  }
+
+  const scheduleRetry = () => {
+    if (st.stopped || retry) return;
+    retry = setTimeout(() => { retry = null; void connect(); }, RETRY_MS);
+  };
+
+  async function connect() {
+    if (st.stopped) return;
+    const ports = await listPorts();
+    let path = configured;
+    // The lane names a port this PC doesn't have, but there's exactly one USB
+    // serial port nobody else uses: that's the reader.
+    const real = ports.filter((p) => isUsb(p) && !isBluetooth(p) && !reserved.has(String(p.path).toUpperCase()));
+    const present = (name) => ports.some((p) => String(p.path).toUpperCase() === String(name).toUpperCase());
+    let note = null;
+    if ((!path || (ports.length && !present(path))) && real.length === 1) {
+      path = real[0].path;
+      note = path !== configured ? `${configured || 'No port'} was set, which isn't on this PC — using ${portLabel(real[0])}. Set the lane's Serial port to ${path} to keep it.` : null;
+    }
+    if (!path) {
+      setStatus(st, { state: 'error', error: openErrorText('The serial port', new Error('file not found'), ports) });
+      return scheduleRetry();
+    }
+    if (st.stopped) return;
+    let p;
+    try {
+      p = new SerialPort({ path, baudRate, autoOpen: false });
+    } catch (e) {
+      setStatus(st, { state: 'error', error: openErrorText(path, e, ports) });
+      return scheduleRetry();
+    }
+    p.open((err) => {
+      if (st.stopped) { try { p.close(() => {}); } catch {} return; }
+      if (err) {
+        setStatus(st, { state: 'error', error: openErrorText(path, err, ports), path });
+        return scheduleRetry();
+      }
+      port = p;
+      st.bytes = 0;
+      setStatus(st, { state: st.tags ? 'ok' : 'waiting', error: null, path, where: path, note });
+      if (note) st.log?.(`RFID reader: ${note}`);
+      st.log?.(`RFID reader connected on ${path} at ${baudRate} baud`);
+    });
+    p.on('data', makeFeeder(st, onTagSeen, device));
+    p.on('error', () => {});
+    p.on('close', () => {
+      if (port !== p) return;
+      port = null;
+      if (st.stopped) return;
+      setStatus(st, { state: 'error', error: `The reader on ${path} was disconnected. The bridge reconnects when it's plugged back in.` });
+      scheduleRetry();
+    });
+  }
+
+  void connect();
+  activeServers.push({
+    close: () => {
+      st.stopped = true;
+      readers.delete(st.key);
+      if (retry) clearTimeout(retry);
+      try { port && port.close(() => {}); } catch {}
+    },
+  });
+  return { ok: true, mode: 'serial', path: configured, baudRate, frameFormat: st.format };
 }
 
 function stopAll() {
@@ -189,13 +376,43 @@ function stopAll() {
   activeServers = [];
 }
 
-async function probe(device) {
-  const c = cfg(device);
-  const mode = c.mode || 'tcp';
-  const detail = mode === 'serial'
-    ? `${c.port || '?'} @ ${c.baud || 115200}`
-    : `:${c.tcpPort || c.port || 9090}`;
-  return { ok: true, message: `RFID reader (${mode}, ${c.frameFormat || 'ascii-line'}) ${detail}` };
+/** Be told when a reader connects, fails or starts reading tags. */
+function onStatusChange(fn) {
+  statusListeners.add(fn);
+  return () => statusListeners.delete(fn);
 }
 
-module.exports = { startReader, stopAll, probe, run: async () => ({ ok: true }), _internal: { evaluateAllowList, parseFrames } };
+const STATE_NOTE = {
+  waiting: (st) => `Connected on ${st.where}. Nothing received yet — hold a tag at the reader. If nothing ever arrives, turn on Auto-read in the S4A tool.`,
+};
+
+/**
+ * How a reader is doing, for the bridge screen and VillaSafe's device health.
+ * A reader that's running reports its live status; one that isn't (the lane
+ * wizard's Test connection) checks the port is on this PC.
+ */
+async function probe(device) {
+  const c = cfg(device);
+  const st = readers.get(keyOf(c));
+  if (st) {
+    if (st.state === 'error' || st.state === 'no_tags') return { ok: false, error: st.error };
+    if (st.state === 'starting') return { ok: true, note: `Connecting to ${st.where}…` };
+    const note = st.note || (st.state === 'waiting' ? STATE_NOTE.waiting(st) : null);
+    return { ok: true, note, info: `${st.where} · ${formatName(st.format)} · ${st.tags} tag read${st.tags === 1 ? '' : 's'}` };
+  }
+  if (isTcp(c)) return { ok: true, info: `Listens on TCP port ${tcpPortOf(c)} for the reader` };
+  const ports = await listPorts();
+  const path = String(c.port || '').trim();
+  const found = ports.find((p) => String(p.path).toUpperCase() === path.toUpperCase());
+  if (found) return { ok: true, info: `${portLabel(found)} is on this PC` };
+  return { ok: false, error: openErrorText(path || 'The serial port', new Error('file not found'), ports) };
+}
+
+/** Live status of every running reader. */
+const statuses = () => [...readers.values()].map(({ log, ...st }) => st);
+
+module.exports = {
+  startReader, stopAll, probe, onStatusChange, statuses,
+  run: async () => ({ ok: true }),
+  _internal: { evaluateAllowList, parseFrames, detectFormat, setSerialPort: (impl) => { SerialPortImpl = impl; }, setRetryMs: (ms) => { RETRY_MS = ms; } },
+};

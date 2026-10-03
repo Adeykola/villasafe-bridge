@@ -104,6 +104,7 @@ async function refreshDeviceHealth() {
  * Pull card swipes the DS-K2804 reported over the SDK (reader wired via
  * Wiegand) and turn them into the same events the direct-reader path emits.
  */
+const hasHikvisionLane = () => lanes.some((l) => (l.devices || []).some((d) => d.driver === 'hikvision'));
 let drainingForSync = false;
 let cardPolling = false;
 async function drainWiegandReads() {
@@ -219,7 +220,8 @@ async function refreshDeviceHealthInner() {
         device_kind: d.kind,
         driver: d.driver,
         status: r.ok ? 'online' : 'error',
-        last_error: r.ok ? null : r.error,
+        // A working reader can still have something to say ("waiting for a tag").
+        last_error: r.ok ? (r.note || null) : r.error,
       });
     }
   }
@@ -241,13 +243,55 @@ function refreshRfidReaders({ force = false } = {}) {
   if (!force && sig === readerSignature) return;
   readerSignature = sig;
   rfid.stopAll();
+  // Serial ports other devices use (a relay board, Modbus…), so a reader
+  // looking for its port never takes one of theirs.
+  const serialPortsOf = (d) => [d.params?.port, d.config?.port, d.port].filter((p) => typeof p === 'string' && p.trim());
   for (const { lane, d } of readers) {
+    const reservedPorts = lanes
+      .flatMap((l) => l.devices || [])
+      .filter((x) => x !== d && !(x.driver === 'rfid' && serialPortsOf(x).join() === serialPortsOf(d).join()))
+      .flatMap(serialPortsOf);
     try {
       // The driver only debounces and reports; "log only" is the one mode it keeps.
       rfid.startReader(d, async (tagUid, _dev, meta) => {
         await handleTagRead({ lane, tagUid, via: 'reader', logOnly: !!meta?.logOnly });
-      });
+      }, { reservedPorts, log: diagnostics.log });
     } catch (e) { diagnostics.log(`RFID start failed: ${e.message}`); }
+  }
+}
+
+// A reader connecting, failing or reading its first tag shows in VillaSafe
+// within a second or two, not at the next 20-second health check.
+let readerStatusHooked = false;
+function hookReaderStatus() {
+  if (readerStatusHooked) return;
+  readerStatusHooked = true;
+  rfid.onStatusChange((st) => {
+    if (st.state === 'error' || st.state === 'no_tags') diagnostics.log(`RFID reader: ${st.error}`);
+    refreshReaderHealth().then(() => syncSoon()).catch(() => {});
+  });
+}
+
+/** Re-check just the readers (a full health check logs in to every controller). */
+async function refreshReaderHealth() {
+  for (const lane of lanes) {
+    for (let i = 0; i < (lane.devices || []).length; i++) {
+      const d = lane.devices[i];
+      if (d.driver !== 'rfid') continue;
+      const r = await rfid.probe(d);
+      const entry = {
+        lane_id: lane.id,
+        device_index: i,
+        device_name: d.name,
+        device_kind: d.kind,
+        driver: d.driver,
+        status: r.ok ? 'online' : 'error',
+        last_error: r.ok ? (r.note || null) : r.error,
+      };
+      const at = deviceHealth.findIndex((h) => h.lane_id === lane.id && h.device_index === i);
+      if (at >= 0) deviceHealth[at] = entry;
+      else deviceHealth.push(entry);
+    }
   }
 }
 
@@ -258,8 +302,10 @@ async function syncOnce(cfg) {
   const buffered = offlineQueue.drain();
   // Drain Wiegand card swipes reported by the built-in Hikvision service
   // (they ride along with this sync, so no extra quick sync for them).
-  drainingForSync = true;
-  try { await drainWiegandReads(); } finally { drainingForSync = false; }
+  if (hasHikvisionLane()) {
+    drainingForSync = true;
+    try { await drainWiegandReads(); } finally { drainingForSync = false; }
+  }
   // Drain any pending local commands that were queued while offline
   const queuedCmds = offlineQueue.drainPendingCommands();
   for (const qc of queuedCmds) {
@@ -420,6 +466,7 @@ function startBridge(cfg, eventCb) {
   // straight away — including after a restart with no internet.
   lanes = cfg.lanesCache || [];
   tagStore.load(cfg.bridgeId);
+  hookReaderStatus();
   refreshRfidReaders({ force: true });
   applyTagChanges({ force: true });
   // Arm Hikvision card (Wiegand) channels — no-op when no controllers are set up.
@@ -431,7 +478,7 @@ function startBridge(cfg, eventCb) {
   // Wiegand cards read by a Hikvision controller are collected every second,
   // not just at the sync, so they reach VillaSafe as quickly as direct reads.
   cardPollTimer = setInterval(async () => {
-    if (cardPolling || !lanes.some((l) => (l.devices || []).some((d) => d.driver === 'hikvision'))) return;
+    if (cardPolling || !hasHikvisionLane()) return;
     cardPolling = true;
     try { await drainWiegandReads(); } finally { cardPolling = false; }
   }, 1000);
