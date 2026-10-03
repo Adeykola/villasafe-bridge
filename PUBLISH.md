@@ -44,6 +44,15 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.2** — Card reads reach VillaSafe within about a second, so a card
+  held to the gate reader can be enrolled to a resident from VillaSafe's Scan
+  card, and the Gate reader page shows each read live. A resident whose next
+  bill falls overdue during an internet outage is paused on time, on the PC's
+  clock. Reads of residents let in while offline are uploaded (they used to
+  be dropped), and everything decided offline keeps the time it happened.
+  S4A frames whose EPC contains `7E` are read whole, and a card enrolled by
+  its printed Wiegand number opens for the full EPC. Only one sync runs at a
+  time, so a gate command is never fetched twice.
 - **v1.2.0** — Desktop licence: the estate's `VS-…` licence key is entered
   when pairing, and a paired PC that VillaSafe hasn't licensed locks its lanes
   and asks for the key on its own screen. v1.1.0 and older have no key field,

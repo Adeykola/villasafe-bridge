@@ -7,7 +7,11 @@
 // controller — is decided here by one rule:
 //
 //   suspended  → refused (estate switched it off)
-//   owing      → refused (resident has an overdue bill, unless overridden)
+//   owing      → refused (resident has an overdue bill, unless overridden).
+//                VillaSafe also sends owing_from: when the resident's next
+//                unpaid bill falls overdue. Checked against this PC's clock,
+//                so a bill that falls due during an outage pauses the tag on
+//                time, with no internet.
 //   expired    → refused (valid_until has passed — checked against this PC's
 //                clock, so it expires on time even offline)
 //   wrong lane → refused
@@ -52,7 +56,31 @@ function clear() {
 
 const tags = () => state.tags;
 const savedAt = () => state.savedAt;
-const find = (uid) => state.tags.find((t) => uidOf(t) === String(uid || '').toUpperCase()) || null;
+
+/**
+ * Same card? The same number, the same with leading zeros, or a Wiegand number
+ * that is the end of an EPC: a reader on Wiegand-26 passes only the last 6 hex
+ * digits on (Wiegand-34, the last 8). So a card enrolled from the number
+ * printed on it still opens when the long-range reader sends the full EPC.
+ */
+function sameCard(a, b) {
+  if (!a || !b) return false;
+  if (a === b) return true;
+  const az = a.replace(/^0+/, '');
+  if (az && az === b.replace(/^0+/, '')) return true;
+  const [short, long] = a.length <= b.length ? [a, b] : [b, a];
+  return long.length >= 16 && (short.length === 6 || short.length === 8) && long.endsWith(short);
+}
+
+/** The enrolled tag for a read: an exact match, else the one tag it can only be. */
+function find(uid) {
+  const want = String(uid || '').replace(/[\s:_-]/g, '').toUpperCase();
+  if (!want) return null;
+  const exact = state.tags.find((t) => uidOf(t) === want);
+  if (exact) return exact;
+  const close = state.tags.filter((t) => sameCard(want, uidOf(t)));
+  return close.length === 1 ? close[0] : null;
+}
 
 /**
  * Why a tag may not open, or null when it may.
@@ -62,6 +90,7 @@ function refusal(tag, laneId, now = Date.now()) {
   if (!tag) return 'unknown';
   if (tag.is_active === false) return 'suspended';
   if (tag.paused) return tag.pause_reason === 'owing' || !tag.pause_reason ? 'owing' : tag.pause_reason;
+  if (tag.owing_from && !tag.owing_override && new Date(tag.owing_from).getTime() <= now) return 'owing';
   if (tag.valid_until && new Date(tag.valid_until).getTime() <= now) return 'expired';
   if (tag.lane_id && laneId && tag.lane_id !== laneId) return 'wrong_lane';
   return null;

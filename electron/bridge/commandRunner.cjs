@@ -12,6 +12,8 @@ const lanGate = require('./lanGate.cjs');
 
 let pollTimer = null;
 let probeTimer = null;
+let cardPollTimer = null;
+let activeCfg = null;
 let status = { online: false, lastError: null, queuedOffline: 0, gateway: 'VillaSafe gateway' };
 let onEvent = null;
 let lanes = [];
@@ -87,6 +89,8 @@ async function executeDevice(lane, deviceIndex, action) {
 }
 
 function recordEvent(evt) {
+  // When it happened, so events uploaded after an outage keep their real time.
+  if (!evt.at) evt.at = new Date().toISOString();
   pendingEvents.push(evt);
   try { signedLog.append({ action: evt.action, laneId: evt.laneId, payload: evt }); } catch {}
   onEvent?.(evt);
@@ -100,6 +104,8 @@ async function refreshDeviceHealth() {
  * Pull card swipes the DS-K2804 reported over the SDK (reader wired via
  * Wiegand) and turn them into the same events the direct-reader path emits.
  */
+let drainingForSync = false;
+let cardPolling = false;
 async function drainWiegandReads() {
   let events = [];
   try { events = await cardBridge.drainCardEvents(); } catch { return; }
@@ -122,12 +128,16 @@ const REFUSAL_ACTION = { unknown: 'rfid_denied', wrong_lane: 'rfid_blocked', sus
 async function handleTagRead({ lane = null, laneId = lane?.id || null, tagUid, via, extra = {}, open = true, logOnly = false }) {
   const tag = tagStore.find(tagUid);
   const why = tagStore.refusal(tag, laneId);
-  const details = { tagUid, label: tag?.label || null, via, ...extra };
+  // Report the enrolled number (it can differ: a card enrolled by its printed
+  // Wiegand number, read as a full EPC), so VillaSafe updates the right tag.
+  const enrolled = tag ? String(tag.tag_uid).toUpperCase() : tagUid;
+  const details = { tagUid: enrolled, ...(enrolled !== tagUid ? { readUid: tagUid } : {}), label: tag?.label || null, via, ...extra };
   // "logged": this PC records its own detailed rfid_* event for the read, so
   // VillaSafe only bumps last_seen and doesn't log it a second time. A tag
   // that opens the gate is logged by VillaSafe (the PC logs the gate "open").
-  const read = { tagUid, laneId, label: tag?.label || null, authorized: !why, via, logged: true };
+  const read = { tagUid: enrolled, laneId, label: tag?.label || null, authorized: !why, via, logged: true, at: new Date().toISOString() };
   pendingRfidReads.push(read);
+  if (!drainingForSync) syncSoon();
   if (why) {
     recordEvent({ laneId, action: REFUSAL_ACTION[why] || 'rfid_denied', source: 'rfid', success: false,
       error: tagStore.REASON_TEXT[why] || why, details: { ...details, reason: why } });
@@ -142,6 +152,41 @@ async function handleTagRead({ lane = null, laneId = lane?.id || null, tagUid, v
     await executeLane(lane, 'open', null);
   } else {
     recordEvent({ laneId, action: 'rfid_read', source: 'rfid', success: true, details });
+  }
+  return true;
+}
+
+// A tag read reaches VillaSafe within about a second instead of at the next
+// 5-second sync, so a card held to the reader while an admin enrols it shows up
+// in VillaSafe straight away (and the live Gate reader page keeps up).
+let quickTimer = null;
+let lastQuickAt = 0;
+function syncSoon() {
+  if (!activeCfg || quickTimer) return;
+  const wait = Math.max(250, 1000 - (Date.now() - lastQuickAt));
+  quickTimer = setTimeout(async () => {
+    quickTimer = null;
+    if (!activeCfg) return;
+    lastQuickAt = Date.now();
+    // Another sync is on its way: try again just after it.
+    if (!(await runSync(activeCfg))) syncSoon();
+  }, wait);
+}
+
+// One sync at a time, so two can't both collect the same gate command from
+// VillaSafe and run it twice. A sync stuck for 30 seconds no longer blocks.
+let syncSeq = 0;
+let syncRunning = { seq: 0, at: 0 };
+async function runSync(cfg) {
+  if (syncRunning.seq && Date.now() - syncRunning.at < 30_000) return false;
+  const seq = ++syncSeq;
+  syncRunning = { seq, at: Date.now() };
+  try {
+    await syncOnce(cfg);
+  } catch (e) {
+    diagnostics.log(`sync failed: ${e.message}`);
+  } finally {
+    if (syncRunning.seq === seq) syncRunning = { seq: 0, at: 0 };
   }
   return true;
 }
@@ -212,7 +257,9 @@ async function syncOnce(cfg) {
   // Drain offline queue (events + results) first
   const buffered = offlineQueue.drain();
   // Drain Wiegand card swipes reported by the built-in Hikvision service
-  await drainWiegandReads();
+  // (they ride along with this sync, so no extra quick sync for them).
+  drainingForSync = true;
+  try { await drainWiegandReads(); } finally { drainingForSync = false; }
   // Drain any pending local commands that were queued while offline
   const queuedCmds = offlineQueue.drainPendingCommands();
   for (const qc of queuedCmds) {
@@ -228,7 +275,7 @@ async function syncOnce(cfg) {
     version: BRIDGE_VERSION,
     events: [...buffered.events, ...pendingEvents.splice(0, pendingEvents.length)],
     commandResults: [...buffered.commandResults, ...pendingResults.splice(0, pendingResults.length)],
-    rfidReads: pendingRfidReads.splice(0, pendingRfidReads.length),
+    rfidReads: [...(buffered.rfidReads || []), ...pendingRfidReads.splice(0, pendingRfidReads.length)],
     deviceHealth,
     cpuLoad: os.loadavg()[0] || 0,
     lastError: status.lastError,
@@ -298,7 +345,7 @@ async function syncOnce(cfg) {
       setLicence(refusal);
       status.online = true;
       status.lastError = licence.message;
-      offlineQueue.requeue(body.events, body.commandResults);
+      offlineQueue.requeue(body.events, body.commandResults, body.rfidReads);
       lanGate.requeueScans(body.lanScans);
       return;
     }
@@ -338,7 +385,7 @@ async function syncOnce(cfg) {
       status.lastError = e.message;
     }
     // Persist them in the offline queue so they survive restarts too
-    offlineQueue.requeue(body.events, body.commandResults);
+    offlineQueue.requeue(body.events, body.commandResults, body.rfidReads);
     lanGate.requeueScans(body.lanScans);
     status.queuedOffline = offlineQueue.size();
     diagnostics.log(`sync offline: ${e.message} — queued ${status.queuedOffline}`);
@@ -378,8 +425,16 @@ function startBridge(cfg, eventCb) {
   // Arm Hikvision card (Wiegand) channels — no-op when no controllers are set up.
   cardBridge.armControllers().catch(() => {});
   // Immediate sync, then every 5s
-  syncOnce(cfg);
-  pollTimer = setInterval(() => syncOnce(cfg), 5000);
+  activeCfg = cfg;
+  runSync(cfg);
+  pollTimer = setInterval(() => runSync(cfg), 5000);
+  // Wiegand cards read by a Hikvision controller are collected every second,
+  // not just at the sync, so they reach VillaSafe as quickly as direct reads.
+  cardPollTimer = setInterval(async () => {
+    if (cardPolling || !lanes.some((l) => (l.devices || []).some((d) => d.driver === 'hikvision'))) return;
+    cardPolling = true;
+    try { await drainWiegandReads(); } finally { cardPolling = false; }
+  }, 1000);
   // Device probes every 20s
   refreshDeviceHealth();
   probeTimer = setInterval(() => refreshDeviceHealth(), 20000);
@@ -388,6 +443,11 @@ function startBridge(cfg, eventCb) {
 function stopBridge() {
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
+  if (cardPollTimer) clearInterval(cardPollTimer);
+  cardPollTimer = null;
+  if (quickTimer) clearTimeout(quickTimer);
+  quickTimer = null;
+  activeCfg = null;
   if (probeTimer) clearInterval(probeTimer);
   probeTimer = null;
   rfid.stopAll();

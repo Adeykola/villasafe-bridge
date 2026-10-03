@@ -86,32 +86,60 @@ function parseAsciiLine(buf) {
   return { epcs, rest: Buffer.from(rest, 'utf8') };
 }
 
-// S4A UHF-202420 native frame:
-//   0xBB <TYPE> <CMD> <LEN_H> <LEN_L> <RSSI> <PC_H> <PC_L> <EPC 12B> <CRC_H> <CRC_L> 0x7E
-// We conservatively scan for 0xBB … 0x7E, then extract 12 bytes of EPC from a
-// known offset when the payload length matches the "single-tag notify" frame.
+// S4A UHF-202420 native frame (its M100/R200 reader module):
+//   0xBB <TYPE> <CMD> <LEN_H> <LEN_L> <payload…> <CHECKSUM> 0x7E
+// A tag notice is type 02, command 22, payload RSSI(1) PC(2) EPC(n) CRC(2);
+// the checksum is the low byte of TYPE…payload. Reading by the length field
+// means an EPC that happens to contain 0x7E is still read whole. Frames that
+// don't check out fall back to the original reading (12-byte EPC, 8 bytes in).
+const MAX_PENDING = 512;
+
 function parseS4ABinary(buf) {
   const epcs = [];
   let i = 0;
-  let lastEnd = 0;
   while (i < buf.length) {
     const start = buf.indexOf(0xBB, i);
-    if (start < 0) break;
-    const end = buf.indexOf(0x7E, start + 1);
-    if (end < 0) break; // wait for more data
-    const frame = buf.slice(start, end + 1);
-    // Typical single-tag notify: length ~= 22-24 bytes, EPC 12B starts 8 bytes in.
-    if (frame.length >= 20 && frame.length <= 40) {
-      // Try the common S4A/JADAK offset first (8..20 = 12B EPC).
-      const epc = frame.slice(8, Math.min(20, frame.length - 3));
-      if (epc.length >= 8) {
-        epcs.push(epc.toString('hex').toUpperCase());
+    if (start < 0) { i = buf.length; break; }
+    if (buf.length - start < 7) { i = start; break; }
+
+    const len = (buf[start + 3] << 8) | buf[start + 4];
+    const end = start + len + 6;
+    if (len <= 128 && end >= buf.length) { i = start; break; } // wait for the rest
+
+    if (len <= 128 && buf[end] === 0x7E) {
+      let sum = 0;
+      for (let k = start + 1; k < end - 1; k++) sum = (sum + buf[k]) & 0xFF;
+      if (sum === buf[end - 1]) {
+        if (buf[start + 1] === 0x02 && buf[start + 2] === 0x22 && len >= 9) {
+          const pc = (buf[start + 6] << 8) | buf[start + 7];
+          let epcLen = len - 5;
+          const words = pc >> 11;
+          if (words > 0 && words * 2 <= epcLen) epcLen = words * 2;
+          epcs.push(buf.slice(start + 8, start + 8 + epcLen).toString('hex').toUpperCase());
+        }
+        i = end + 1;
+        continue;
       }
     }
-    lastEnd = end + 1;
-    i = lastEnd;
+
+    // Not a clean module frame: the original reading.
+    const loose = buf.indexOf(0x7E, start + 1);
+    if (loose < 0) {
+      if (buf.length - start > 64) { i = start + 1; continue; }
+      i = start;
+      break;
+    }
+    const frameLen = loose - start + 1;
+    if (frameLen >= 20 && frameLen <= 40) {
+      const epc = buf.slice(start + 8, Math.min(start + 20, loose - 2));
+      if (epc.length >= 8) epcs.push(epc.toString('hex').toUpperCase());
+      i = loose + 1;
+    } else {
+      i = start + 1;
+    }
   }
-  return { epcs, rest: buf.slice(lastEnd) };
+  const rest = buf.slice(i);
+  return { epcs, rest: rest.length > MAX_PENDING ? rest.slice(rest.length - MAX_PENDING) : rest };
 }
 
 function startTcp(device, onTagSeen) {
@@ -170,4 +198,4 @@ async function probe(device) {
   return { ok: true, message: `RFID reader (${mode}, ${c.frameFormat || 'ascii-line'}) ${detail}` };
 }
 
-module.exports = { startReader, stopAll, probe, run: async () => ({ ok: true }), _internal: { evaluateAllowList } };
+module.exports = { startReader, stopAll, probe, run: async () => ({ ok: true }), _internal: { evaluateAllowList, parseFrames } };

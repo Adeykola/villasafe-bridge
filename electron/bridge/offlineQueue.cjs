@@ -8,12 +8,13 @@ const FILE = path.join(DIR, 'queue.json');
 function load() {
   try {
     if (!fs.existsSync(DIR)) fs.mkdirSync(DIR, { recursive: true });
-    if (!fs.existsSync(FILE)) return { events: [], commandResults: [], pendingCommands: [] };
+    if (!fs.existsSync(FILE)) return { events: [], commandResults: [], pendingCommands: [], rfidReads: [] };
     const data = JSON.parse(fs.readFileSync(FILE, 'utf8'));
     if (!data.pendingCommands) data.pendingCommands = [];
+    if (!data.rfidReads) data.rfidReads = [];
     return data;
   } catch {
-    return { events: [], commandResults: [], pendingCommands: [] };
+    return { events: [], commandResults: [], pendingCommands: [], rfidReads: [] };
   }
 }
 
@@ -49,21 +50,27 @@ function drainPendingCommands() {
 
 function drain() {
   const q = load();
-  const out = { events: q.events, commandResults: q.commandResults };
-  q.events = []; q.commandResults = [];
+  const out = { events: q.events, commandResults: q.commandResults, rfidReads: q.rfidReads };
+  q.events = []; q.commandResults = []; q.rfidReads = [];
   save(q);
   return out;
 }
 
 function size() {
   const q = load();
-  return q.events.length + q.commandResults.length + (q.pendingCommands || []).length;
+  return q.events.length + q.commandResults.length + (q.pendingCommands || []).length + q.rfidReads.length;
 }
 
-function requeue(events, commandResults) {
+// Tag reads too: a resident let in while offline is uploaded with the read,
+// so VillaSafe knows who it was. Past this many, the oldest are dropped.
+const MAX_READS = 5000;
+
+function requeue(events, commandResults, rfidReads = []) {
   const q = load();
   q.events.unshift(...events);
   q.commandResults.unshift(...commandResults);
+  q.rfidReads.unshift(...rfidReads);
+  if (q.rfidReads.length > MAX_READS) q.rfidReads = q.rfidReads.slice(-MAX_READS);
   save(q);
 }
 
