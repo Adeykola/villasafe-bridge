@@ -34,6 +34,9 @@ function push(evt) {
     id: ++seq,
     tagUid: evt.tagUid || evt.rawCardNo,
     rawCardNo: evt.rawCardNo,
+    // Which controller it came from, so the bridge can find the lane (door
+    // numbers repeat across controllers).
+    controllerId: registry.byUserId(evt.userId)?.controller?.id || null,
     laneId: lane?.id || null,
     laneName: lane?.name || null,
     doorNo: evt.doorNo,
@@ -56,13 +59,17 @@ function start() {
   log.info('Card event service started');
 }
 
-/** Arm every controller that backs at least one lane. */
-async function armAll() {
+/**
+ * Arm card events on these controllers (the Gate Bridge passes the ones behind
+ * its VillaSafe lanes), or on every controller in this service's own lanes.
+ * Logs in as a background check, so a refused password is never retried.
+ */
+async function armAll(controllerIds) {
   const results = [];
-  const ids = [...new Set(lanes.list().map(l => l.controllerId).filter(Boolean))];
+  const ids = [...new Set((controllerIds && controllerIds.length ? controllerIds : lanes.list().map(l => l.controllerId)).filter(Boolean))];
   for (const id of ids) {
     try {
-      const session = await registry.ensure(id);
+      const session = await registry.ensure(id, { background: true });
       results.push({ controllerId: id, ...events.subscribe(session) });
     } catch (e) {
       results.push({ controllerId: id, ok: false, error: e.message });

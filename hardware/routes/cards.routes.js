@@ -22,10 +22,14 @@ router.get('/status', (_req, res) => res.json({
   provisioned: provisioning.state(),
 }));
 
-// Arm alarm channels on every controller backing a lane.
-router.post('/arm', async (_req, res, next) => {
-  try { cardEvents.start(); res.json({ ok: true, controllers: await cardEvents.armAll() }); }
-  catch (e) { next(e); }
+// Arm alarm channels on the controllers given (the Gate Bridge's lanes), or on
+// every controller backing one of this service's lanes.
+router.post('/arm', async (req, res, next) => {
+  try {
+    const ids = Array.isArray(req.body && req.body.controllerIds) ? req.body.controllerIds.map(String) : undefined;
+    cardEvents.start();
+    res.json({ ok: true, controllers: await cardEvents.armAll(ids) });
+  } catch (e) { next(e); }
 });
 
 const tagSchema = z.object({

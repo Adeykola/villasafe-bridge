@@ -63,4 +63,11 @@ function status() {
 
 function get(controllerId) { return registry.get(controllerId) || null; }
 
-module.exports = { ensure, disconnect, status, get };
+/** The session logged in as this SDK user id (what a controller's messages carry). */
+function byUserId(userId) {
+  if (userId == null || userId < 0) return null;
+  for (const s of registry.values()) if (s.userId === userId) return s;
+  return null;
+}
+
+module.exports = { ensure, disconnect, status, get, byUserId };

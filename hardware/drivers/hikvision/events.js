@@ -39,7 +39,7 @@ const listeners = new Set();
 let registered = false;
 let registrationError = null;
 let callbackRef = null;
-const alarmHandles = new Map(); // controllerId -> handle
+const alarmHandles = new Map(); // controllerId -> { handle, userId }
 let lastEventAt = null;
 
 function onEvent(fn) { listeners.add(fn); return () => listeners.delete(fn); }
@@ -74,6 +74,20 @@ function decodeAcsAlarm(bytes) {
   };
 }
 
+/**
+ * The SDK login (lUserID) a message came in on, so the swipe can be tied to its
+ * controller. NET_DVR_ALARMER starts with 8 validity flags, then lUserID.
+ */
+function alarmerUserId(koffi, pAlarmer) {
+  try {
+    if (!pAlarmer) return null;
+    const b = Buffer.from(koffi.decode(pAlarmer, koffi.array('uint8', 12)));
+    return b[0] ? b.readInt32LE(8) : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Register the single global SDK message callback. Idempotent. */
 function ensureRegistered() {
   if (registered) return true;
@@ -86,13 +100,13 @@ function ensureRegistered() {
     return false;
   }
   try {
-    callbackRef = koffi.register((lCommand, _pAlarmer, pAlarmInfo, dwBufLen) => {
+    callbackRef = koffi.register((lCommand, pAlarmer, pAlarmInfo, dwBufLen) => {
       try {
         if (lCommand === COMM_ALARM_ACS && pAlarmInfo) {
           const len = Math.max(Number(dwBufLen) || 0, DOOR_NO_OFFSET + 8);
           const bytes = koffi.decode(pAlarmInfo, koffi.array('uint8', len));
           const evt = decodeAcsAlarm(bytes);
-          if (evt) emit({ type: 'card', ...evt });
+          if (evt) emit({ type: 'card', ...evt, userId: alarmerUserId(koffi, pAlarmer) });
         }
       } catch (e) {
         log.warn('Failed to decode controller alarm', { error: e.message });
@@ -118,7 +132,11 @@ function ensureRegistered() {
 /** Arm the alarm channel for one logged-in controller session. */
 function subscribe(session) {
   if (!session || session.userId < 0) return { ok: false, error: 'Controller session is not connected' };
-  if (alarmHandles.has(session.controller.id)) return { ok: true, alreadyArmed: true };
+  const armed = alarmHandles.get(session.controller.id);
+  // Still on the login it was armed on: nothing to do. After the controller
+  // rebooted or the bridge logged in again, that channel is gone — arm afresh.
+  if (armed && armed.userId === session.userId) return { ok: true, alreadyArmed: true };
+  if (armed) unsubscribe(session.controller.id);
   if (!ensureRegistered()) return { ok: false, error: registrationError };
 
   const { api, koffi, structs } = sdkLoader.load();
@@ -148,7 +166,7 @@ function subscribe(session) {
     if (handle < 0) {
       return { ok: false, error: `NET_DVR_SetupAlarmChan_V41 failed (SDK error ${api.NET_DVR_GetLastError()})` };
     }
-    alarmHandles.set(session.controller.id, handle);
+    alarmHandles.set(session.controller.id, { handle, userId: session.userId });
     log.info('Armed access-control alarm channel', { controllerId: session.controller.id, handle });
     return { ok: true, handle };
   } catch (e) {
@@ -157,10 +175,10 @@ function subscribe(session) {
 }
 
 function unsubscribe(controllerId) {
-  const handle = alarmHandles.get(controllerId);
-  if (handle == null) return;
+  const armed = alarmHandles.get(controllerId);
+  if (armed == null) return;
   alarmHandles.delete(controllerId);
-  try { sdkLoader.load().api.NET_DVR_CloseAlarmChan_V30?.(handle); } catch { /* noop */ }
+  try { sdkLoader.load().api.NET_DVR_CloseAlarmChan_V30?.(armed.handle); } catch { /* noop */ }
 }
 
 function status() {

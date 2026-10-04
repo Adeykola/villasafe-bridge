@@ -44,6 +44,15 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.4** — Long-range readers wired by Wiegand into a Hikvision
+  controller now work end to end. The bridge listens for card swipes on every
+  controller behind a VillaSafe lane (it only listened on its own internal
+  lane list before, so these swipes never reached VillaSafe), re-arming every
+  minute so a rebooted controller reports again. Each swipe is tied to its
+  lane by controller and door. Cards are written into the controller in its
+  own number format (decimal, learned exactly from its swipes) instead of
+  hex, which it never matched; and a card VillaSafe allows also opens the
+  lane from the bridge, so the boom lifts even before the controller has it.
 - **v1.2.3** — The long-range reader says what's wrong instead of failing
   silently: a serial port that isn't on the PC (listing the ports that are),
   a port another program holds, a pulled cable, or data with no tag numbers

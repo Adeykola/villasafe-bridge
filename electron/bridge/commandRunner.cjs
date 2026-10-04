@@ -1,6 +1,7 @@
 const Store = require('../config/laneStore.cjs');
 const { runDriver, probeDriver } = require('../drivers/index.cjs');
 const rfid = require('../drivers/rfid.cjs');
+const { controllerIdFor } = require('../drivers/hikvision.cjs');
 const cardBridge = require('./cardBridge.cjs');
 const tagStore = require('./tagStore.cjs');
 const offlineQueue = require('./offlineQueue.cjs');
@@ -13,6 +14,7 @@ const lanGate = require('./lanGate.cjs');
 let pollTimer = null;
 let probeTimer = null;
 let cardPollTimer = null;
+let armTimer = null;
 let activeCfg = null;
 let status = { online: false, lastError: null, queuedOffline: 0, gateway: 'VillaSafe gateway' };
 let onEvent = null;
@@ -100,22 +102,67 @@ async function refreshDeviceHealth() {
   return refreshDeviceHealthInner();
 }
 
-/**
- * Pull card swipes the DS-K2804 reported over the SDK (reader wired via
- * Wiegand) and turn them into the same events the direct-reader path emits.
- */
 const hasHikvisionLane = () => lanes.some((l) => (l.devices || []).some((d) => d.driver === 'hikvision'));
 let drainingForSync = false;
 let cardPolling = false;
+
+/**
+ * The lane (and turnstile side) a controller swipe belongs to: the lane whose
+ * Hikvision device is that controller and that door. With a single lane behind
+ * a controller, that lane.
+ */
+function laneForSwipe(e) {
+  const door = Number(e.doorNo);
+  for (const lane of lanes) {
+    for (const d of (lane.devices || []).filter((x) => x.driver === 'hikvision')) {
+      const p = d.params || {};
+      if (e.controllerId && controllerIdFor(p) !== e.controllerId) continue;
+      if (door && door === parseInt(p.exitDoorNo, 10)) return { lane, side: 'exit' };
+      if (door && door === parseInt(p.entryDoorNo, 10)) return { lane, side: 'entry' };
+      if (door && door === (parseInt(p.doorNo, 10) || 1)) return { lane, side: undefined };
+    }
+  }
+  const behind = lanes.filter((l) => (l.devices || []).some((d) => d.driver === 'hikvision' && (!e.controllerId || controllerIdFor(d.params || {}) === e.controllerId)));
+  return { lane: behind.length === 1 ? behind[0] : null, side: undefined };
+}
+
+// One swipe can arrive as more than one controller message, and the reader
+// repeats a tag while it stays in range: one decision per tag in this window.
+const WIEGAND_REPEAT_MS = 4000;
+const lastWiegandAt = new Map();
+
+/**
+ * Pull card swipes the DS-K2804 reported over the SDK (reader wired via
+ * Wiegand) and decide them like any other read. A tag VillaSafe allows also
+ * opens the lane from here, so the boom lifts even before the controller has
+ * the card in its own list; the controller still opens on its own when this
+ * PC is off.
+ */
 async function drainWiegandReads() {
   let events = [];
   try { events = await cardBridge.drainCardEvents(); } catch { return; }
+  const now = Date.now();
   for (const e of events) {
     const tagUid = String(e.tagUid || e.rawCardNo || '').toUpperCase();
     if (!tagUid) continue;
-    // The controller already decided (it holds only approved cards); this
-    // records the read with VillaSafe's reason.
-    await handleTagRead({ laneId: e.laneId || null, tagUid, via: 'wiegand', extra: { rawCardNo: e.rawCardNo, doorNo: e.doorNo }, open: false });
+    const tag = tagStore.find(tagUid);
+    // The number exactly as this controller shows it, so the cards written
+    // into it match its own swipes.
+    if (e.rawCardNo) {
+      cardBridge.learnCardNumber(tagUid, e.rawCardNo);
+      if (tag) cardBridge.learnCardNumber(tag.tag_uid, e.rawCardNo);
+    }
+    const key = tag ? String(tag.tag_uid).toUpperCase() : tagUid;
+    if (now - (lastWiegandAt.get(key) || 0) < WIEGAND_REPEAT_MS) continue;
+    lastWiegandAt.set(key, now);
+    const { lane, side } = laneForSwipe(e);
+    await handleTagRead({
+      lane, laneId: lane?.id || e.laneId || null, tagUid, via: 'wiegand', side,
+      extra: { rawCardNo: e.rawCardNo, doorNo: e.doorNo }, open: true,
+    });
+  }
+  if (lastWiegandAt.size > 5000) {
+    for (const [k, at] of lastWiegandAt) if (now - at > WIEGAND_REPEAT_MS) lastWiegandAt.delete(k);
   }
 }
 
@@ -126,7 +173,7 @@ const REFUSAL_ACTION = { unknown: 'rfid_denied', wrong_lane: 'rfid_blocked', sus
  * One decision for every tag read, from any reader, using the tag list saved
  * on this PC (tagStore) — so it works the same with or without internet.
  */
-async function handleTagRead({ lane = null, laneId = lane?.id || null, tagUid, via, extra = {}, open = true, logOnly = false }) {
+async function handleTagRead({ lane = null, laneId = lane?.id || null, tagUid, via, extra = {}, open = true, logOnly = false, side }) {
   const tag = tagStore.find(tagUid);
   const why = tagStore.refusal(tag, laneId);
   // Report the enrolled number (it can differ: a card enrolled by its printed
@@ -150,11 +197,23 @@ async function handleTagRead({ lane = null, laneId = lane?.id || null, tagUid, v
   }
   if (open && lane) {
     read.logged = false;
-    await executeLane(lane, 'open', null);
+    await executeLane(lane, 'open', null, { side });
   } else {
     recordEvent({ laneId, action: 'rfid_read', source: 'rfid', success: true, details });
   }
   return true;
+}
+
+// Listen for card swipes on the Hikvision controllers behind the lanes: when
+// they change, and every minute (a controller that rebooted, or was offline,
+// starts reporting again; one already listening is left alone).
+let armedSignature = '';
+function armIfControllersChanged() {
+  const sig = JSON.stringify(lanes.flatMap((l) => (l.devices || []).filter((d) => d.driver === 'hikvision')
+    .map((d) => [controllerIdFor(d.params || {}), d.params?.username, d.params?.password])));
+  if (sig === armedSignature) return;
+  armedSignature = sig;
+  if (hasHikvisionLane()) cardBridge.armControllers(lanes).catch(() => {});
 }
 
 // A tag read reaches VillaSafe within about a second instead of at the next
@@ -340,6 +399,7 @@ async function syncOnce(cfg) {
       diagnostics.log('Bridge token refreshed by server');
     }
     lanes = data.lanes || [];
+    armIfControllersChanged();
     lanGate.updateFromSync(data, cfg);
     // Save the estate's tags on this PC so they keep working offline and
     // across restarts, then bring readers and Hikvision controllers in step.
@@ -470,7 +530,9 @@ function startBridge(cfg, eventCb) {
   refreshRfidReaders({ force: true });
   applyTagChanges({ force: true });
   // Arm Hikvision card (Wiegand) channels — no-op when no controllers are set up.
-  cardBridge.armControllers().catch(() => {});
+  armedSignature = '';
+  armIfControllersChanged();
+  armTimer = setInterval(() => { if (hasHikvisionLane()) cardBridge.armControllers(lanes).catch(() => {}); }, 60_000);
   // Immediate sync, then every 5s
   activeCfg = cfg;
   runSync(cfg);
@@ -492,6 +554,8 @@ function stopBridge() {
   pollTimer = null;
   if (cardPollTimer) clearInterval(cardPollTimer);
   cardPollTimer = null;
+  if (armTimer) clearInterval(armTimer);
+  armTimer = null;
   if (quickTimer) clearTimeout(quickTimer);
   quickTimer = null;
   activeCfg = null;
