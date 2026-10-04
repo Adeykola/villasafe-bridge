@@ -9,9 +9,13 @@
 // or the resident's next bill falls overdue, and then the card is added to
 // that person. The controller then keeps deciding correctly by itself.
 // Older card-based firmware without persons gets the permission on the card.
+// Firmware with no ISAPI card management at all (the DS-K2804s on site answer
+// every ISAPI card call with "not supported") gets the same card through the
+// SDK's classic card interface (drivers/hikvision/cardsSdk.js).
 //
-// Uses the SDK's ISAPI passthrough (NET_DVR_STDXMLConfig).
+// Uses the SDK's ISAPI passthrough (NET_DVR_STDXMLConfig) where it can.
 const sdkLoader = require('../drivers/hikvision/sdkLoader');
+const sdkCards = require('../drivers/hikvision/cardsSdk');
 const registry = require('../sessions/sessionRegistry');
 const log = require('../logger');
 const { BridgeError } = require('../utils/errorMap');
@@ -28,7 +32,7 @@ const FILE = path.join(dataDir(), 'provisioned-cards.json');
 const provisioned = new Map();
 // Controllers whose panel we've read back this launch.
 const reconciled = new Set();
-// controllerId -> 'person' | 'card' (firmware without persons).
+// controllerId -> 'person' | 'card' (ISAPI without persons) | 'sdk' (no ISAPI cards).
 const firmware = new Map();
 
 function loadProvisioned() {
@@ -68,9 +72,11 @@ function sdkIsapi(session, url, bodyJson) {
   const outBuf = Buffer.alloc(1024 * 32);
   const statusBuf = Buffer.alloc(1024 * 4);
 
+  // dwSize is the structure's real size (72 bytes on 64-bit Windows). A fixed
+  // 40 made the SDK refuse every call with "parameter error" (SDK error 17).
   const input = koffi.alloc(structs.NET_DVR_XML_CONFIG_INPUT, 1);
   koffi.encode(input, structs.NET_DVR_XML_CONFIG_INPUT, {
-    dwSize: 40,
+    dwSize: koffi.sizeof(structs.NET_DVR_XML_CONFIG_INPUT),
     lpRequestUrl: urlBuf,
     dwRequestUrlLen: urlBuf.length - 1,
     lpInBuffer: inBuf,
@@ -82,7 +88,7 @@ function sdkIsapi(session, url, bodyJson) {
   });
   const output = koffi.alloc(structs.NET_DVR_XML_CONFIG_OUTPUT, 1);
   koffi.encode(output, structs.NET_DVR_XML_CONFIG_OUTPUT, {
-    dwSize: 40,
+    dwSize: koffi.sizeof(structs.NET_DVR_XML_CONFIG_OUTPUT),
     lpOutBuffer: outBuf,
     dwOutBufferSize: outBuf.length,
     dwReturnedXMLSize: 0,
@@ -102,6 +108,8 @@ function sdkIsapi(session, url, bodyJson) {
 }
 
 let isapiImpl = sdkIsapi; // tests swap in a fake controller
+let sdkCardsImpl = sdkCards;
+let sdkImpl = () => sdkLoader.load();
 
 /** One ISAPI call; a reply that reports a failure throws, with the controller's reason. */
 function call(session, url, body) {
@@ -168,8 +176,40 @@ function addCard(session, card) {
   }
 }
 
+const unsupported = (e) => notSupported(e) || (e && e.code === 'ISAPI_UNAVAILABLE');
+
+/**
+ * How this controller takes cards, asked once with read-only calls: persons
+ * (ISAPI), cards (ISAPI, no persons), or neither — the SDK's card interface.
+ */
+function detectFirmware(session, controllerId) {
+  if (firmware.has(controllerId)) return firmware.get(controllerId);
+  let mode;
+  try {
+    call(session, 'GET /ISAPI/AccessControl/UserInfo/Count?format=json');
+    mode = 'person';
+  } catch (e) {
+    if (!unsupported(e)) throw e; // couldn't ask: try again next time
+    try {
+      call(session, 'GET /ISAPI/AccessControl/CardInfo/Count?format=json');
+      mode = 'card';
+    } catch (e2) {
+      if (!unsupported(e2)) throw e2;
+      mode = 'sdk';
+    }
+  }
+  firmware.set(controllerId, mode);
+  log.info('Controller card management', { controllerId, mode });
+  return mode;
+}
+
 /** Person (with door rights and validity) then card; card-based firmware gets the rights on the card. */
-function writeCard(session, controllerId, c) {
+async function writeCard(session, controllerId, c) {
+  if (firmware.get(controllerId) === 'sdk') {
+    return sdkCardsImpl.setCard(sdkImpl(), session, {
+      cardNo: c.cardNo, doors: doorsOf(c), end: endOf(c), name: nameOf(c), employeeNo: Number(c.employeeNo || c.cardNo) || 0,
+    });
+  }
   if (firmware.get(controllerId) !== 'card') {
     try {
       upsertPerson(session, c);
@@ -230,7 +270,8 @@ function deleteCard(session, cardNo) {
 }
 
 /** Card and its person (deleting the person also removes any cards left on it). */
-function removeCard(session, controllerId, cardNo) {
+async function removeCard(session, controllerId, cardNo) {
+  if (firmware.get(controllerId) === 'sdk') return sdkCardsImpl.deleteCard(sdkImpl(), session, cardNo);
   deleteCard(session, cardNo);
   if (firmware.get(controllerId) === 'card') return;
   try {
@@ -253,11 +294,27 @@ async function sync(controllerId, desired) {
   const want = new Map((desired || []).filter((c) => c && c.cardNo).map((c) => [String(c.cardNo).toUpperCase(), { ...c, cardNo: String(c.cardNo).toUpperCase() }]));
   const have = provisioned.get(controllerId) || new Map();
 
+  let mode;
+  try {
+    mode = detectFirmware(session, controllerId);
+  } catch (e) {
+    throw new BridgeError('CARD_MODE_UNKNOWN', `Could not ask the controller how it takes cards: ${e.message}`);
+  }
+
   // Once per launch, add what the panel actually holds from us to our record,
   // so cards written before this record existed are fixed up or removed too.
+  // (The SDK card list doesn't say who wrote a card: only cards VillaSafe
+  // wants are taken in, so cards enrolled by hand in iVMS are never removed.)
   if (!reconciled.has(controllerId)) {
     try {
-      for (const cardNo of listVillaSafeCards(session)) if (!have.has(cardNo)) have.set(cardNo, '');
+      if (mode === 'sdk') {
+        for (const card of await sdkCardsImpl.listCards(sdkImpl(), session)) {
+          const cardNo = String(card.cardNo).toUpperCase();
+          if (want.has(cardNo) && !have.has(cardNo)) have.set(cardNo, '');
+        }
+      } else {
+        for (const cardNo of listVillaSafeCards(session)) if (!have.has(cardNo)) have.set(cardNo, '');
+      }
       reconciled.add(controllerId);
     } catch (e) {
       log.warn('Could not read cards back from the controller', { controllerId, error: e.message });
@@ -277,13 +334,13 @@ async function sync(controllerId, desired) {
   for (const c of toWrite) {
     const existed = have.has(c.cardNo);
     try {
-      writeCard(session, controllerId, c);
+      await writeCard(session, controllerId, c);
       have.set(c.cardNo, sigOf(c));
       if (existed) updated++; else added++;
     } catch (e) { errors.push({ cardNo: c.cardNo, op: existed ? 'update' : 'add', error: e.message }); }
   }
   for (const cardNo of toRemove) {
-    try { removeCard(session, controllerId, cardNo); have.delete(cardNo); removed++; }
+    try { await removeCard(session, controllerId, cardNo); have.delete(cardNo); removed++; }
     catch (e) { errors.push({ cardNo, op: 'remove', error: e.message }); }
   }
   provisioned.set(controllerId, have);
@@ -307,5 +364,9 @@ function reset(controllerId) {
 
 module.exports = {
   sync, state, reset, addCard, deleteCard,
-  _internal: { setIsapi: (fn) => { isapiImpl = fn || sdkIsapi; }, sigOf, localTime },
+  _internal: {
+    setIsapi: (fn) => { isapiImpl = fn || sdkIsapi; },
+    setSdkCards: (impl, sdk) => { sdkCardsImpl = impl || sdkCards; sdkImpl = sdk ? () => sdk : () => sdkLoader.load(); },
+    sigOf, localTime,
+  },
 };

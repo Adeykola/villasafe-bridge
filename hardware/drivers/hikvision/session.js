@@ -22,12 +22,9 @@ class ControllerSession {
 
   async connect() {
 
-    log.info(
-  {
-    controller: this.controller,
-  },
-  'Attempting controller login'
-  );
+    // Never the password: this log is kept on disk and shown in support bundles.
+    const { password, ...controller } = this.controller || {};
+    log.info({ controller }, 'Attempting controller login');
 
     const { api, structs, koffi } = sdkLoader.load();
     let info;

@@ -44,6 +44,16 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.7** — Tags really do work offline on DS-K2804-class Hikvision
+  controllers. No card ever reached the controller before: every ISAPI call
+  went out with the wrong structure size (SDK error 17), and once that was
+  fixed this firmware turned out to have no ISAPI card management at all
+  (SDK error 23). The bridge now asks each controller how it takes cards,
+  using read-only calls, and writes to the K2804s through the SDK's classic
+  card interface (door rights, all-day schedule, valid until the tag expires
+  or the resident's bill falls overdue), so the controller opens on its own
+  when the PC loses its network. Cards enrolled by hand in iVMS are never
+  removed. The controller password no longer appears in the bridge log.
 - **v1.2.6** — The bridge's start-with-Windows entry has its own name. 1.2.5
   used Electron's default, which every Electron app shares, so installing
   another VillaSafe app on the same PC (the WhatsApp connector) replaced it
