@@ -44,6 +44,16 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.5** — Tags work offline through a Hikvision controller. Cards were
+  written into the controller with no person, door permission or validity,
+  so the controller refused them whenever it had to decide alone (internet
+  down, PC unreachable or off). Each tag now goes on a person allowed through
+  its lane's doors on the all-day schedule, valid until the tag expires or
+  the resident's next bill falls overdue, so the controller pauses owing
+  residents on time even with the PC off; cards written by older versions are
+  fixed up. The bridge now starts with Windows and keeps running in the
+  background (tray icon) when its window is closed, and gives up on a hung
+  request to VillaSafe after 20 seconds.
 - **v1.2.4** — Long-range readers wired by Wiegand into a Hikvision
   controller now work end to end. The bridge listens for card swipes on every
   controller behind a VillaSafe lane (it only listened on its own internal

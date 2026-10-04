@@ -35,22 +35,33 @@ function userMessage(message) {
   return message;
 }
 
-async function safeFetch(url, body) {
-  let res = await fetch(url, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(body),
-    redirect: 'manual',
-  });
-  if ([301, 302, 303, 307, 308].includes(res.status)) {
-    const location = res.headers.get('location');
-    if (!location) throw new Error(`HTTP ${res.status}: gateway redirected without a destination`);
-    res = await fetch(new URL(location, url).toString(), {
+// With Wi-Fi up but no internet a request can hang for minutes; give up in
+// time so the bridge knows it's offline (it keeps deciding locally anyway).
+const REQUEST_TIMEOUT_MS = 20_000;
+
+async function post(url, body) {
+  try {
+    return await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
       redirect: 'manual',
+      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
     });
+  } catch (e) {
+    if (e && (e.name === 'TimeoutError' || e.name === 'AbortError')) {
+      throw new Error(`fetch failed: no answer from VillaSafe within ${REQUEST_TIMEOUT_MS / 1000} s (network)`);
+    }
+    throw e;
+  }
+}
+
+async function safeFetch(url, body) {
+  let res = await post(url, body);
+  if ([301, 302, 303, 307, 308].includes(res.status)) {
+    const location = res.headers.get('location');
+    if (!location) throw new Error(`HTTP ${res.status}: gateway redirected without a destination`);
+    res = await post(new URL(location, url).toString(), body);
   }
   const text = await res.text();
   const contentType = res.headers.get('content-type') || 'unknown';

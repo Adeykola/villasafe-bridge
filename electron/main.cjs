@@ -1,4 +1,4 @@
-const { app, BrowserWindow, ipcMain, powerSaveBlocker } = require('electron');
+const { app, BrowserWindow, ipcMain, powerSaveBlocker, Tray, Menu } = require('electron');
 const path = require('path');
 const crypto = require('crypto');
 const Store = require('./config/laneStore.cjs');
@@ -32,6 +32,51 @@ const diagnostics = require('./bridge/diagnostics.cjs');
 const offlineQueue = require('./bridge/offlineQueue.cjs');
 
 let win;
+let tray = null;
+let quitting = false;
+
+// The gate PC runs one bridge, all the time. It starts with Windows (after a
+// power cut or restart, with or without internet) and keeps running in the
+// background when its window is closed — the tray icon reopens or quits it.
+const startedHidden = process.argv.includes('--hidden');
+const isFirstInstance = app.requestSingleInstanceLock();
+if (!isFirstInstance) {
+  app.quit();
+} else {
+  app.on('second-instance', () => showWindow());
+}
+
+function startWithWindows() {
+  if (!app.isPackaged || process.platform === 'linux') return;
+  try {
+    app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true, args: ['--hidden'] });
+  } catch (e) {
+    diagnostics.log(`Could not set the bridge to start with Windows: ${e.message}`);
+  }
+}
+
+function showWindow() {
+  if (!win || win.isDestroyed()) createWindow();
+  if (win.isMinimized()) win.restore();
+  win.show();
+  win.focus();
+}
+
+function createTray() {
+  if (tray) return;
+  try {
+    tray = new Tray(path.join(__dirname, '..', 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png'));
+    tray.setToolTip('VillaSafe Gate Bridge — running');
+    tray.setContextMenu(Menu.buildFromTemplate([
+      { label: 'Open VillaSafe Gate Bridge', click: showWindow },
+      { type: 'separator' },
+      { label: 'Quit (gates stop opening automatically)', click: () => { quitting = true; app.quit(); } },
+    ]));
+    tray.on('click', showWindow);
+  } catch (e) {
+    diagnostics.log(`No tray icon: ${e.message}`);
+  }
+}
 
 // The Hikvision (HCNetSDK) service used to be a separate program. It now runs
 // in this process on loopback, on its own port (the LAN gate owns 8787), with a
@@ -68,6 +113,7 @@ async function startHardwareService() {
 
 function createWindow() {
   win = new BrowserWindow({
+    show: !startedHidden,
     width: 1180,
     height: 800,
     minWidth: 880,
@@ -83,9 +129,18 @@ function createWindow() {
     },
   });
   win.loadFile(path.join(__dirname, '..', 'ui', 'index.html'));
+  // Closing the window keeps the bridge (and the gates) running in the background.
+  win.on('close', (e) => {
+    if (quitting || !tray) return;
+    e.preventDefault();
+    win.hide();
+  });
 }
 
 app.whenReady().then(async () => {
+  if (!isFirstInstance) return; // the running bridge shows its window instead
+  startWithWindows();
+  createTray();
   createWindow();
   // A gate PC must stay reachable: no system sleep while the bridge runs
   // (the screen may still turn off). Matters most on Wi-Fi laptops.
@@ -188,9 +243,11 @@ ipcMain.handle('bridge:unpair', () => {
 });
 
 app.on('before-quit', () => {
+  quitting = true;
   try { require('../hardware/app.js').stop(hardwareServer); } catch { /* noop */ }
 });
 
 app.on('window-all-closed', () => {
-  if (process.platform !== 'darwin') app.quit();
+  // With a tray icon the bridge keeps running; without one, closing quits.
+  if (!tray && process.platform !== 'darwin') app.quit();
 });

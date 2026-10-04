@@ -1,8 +1,16 @@
 // Pushes the approved card list down to the controller so access still works —
-// and paused cards are still refused — when the internet is down.
+// and paused cards are still refused — when the internet is down, or the
+// Gate Bridge PC can't reach the controller, or is switched off.
 //
-// Uses the SDK's ISAPI passthrough (NET_DVR_STDXMLConfig) against
-// /ISAPI/AccessControl/CardInfo, which the K2 series supports natively.
+// A Hikvision access controller decides a card by the person it belongs to: a
+// card on its own, with no door permission, is refused. So each VillaSafe tag
+// becomes a person (employeeNo = the card number) allowed through the lane's
+// doors on the all-day schedule (plan template 1), valid until the tag expires
+// or the resident's next bill falls overdue, and then the card is added to
+// that person. The controller then keeps deciding correctly by itself.
+// Older card-based firmware without persons gets the permission on the card.
+//
+// Uses the SDK's ISAPI passthrough (NET_DVR_STDXMLConfig).
 const sdkLoader = require('../drivers/hikvision/sdkLoader');
 const registry = require('../sessions/sessionRegistry');
 const log = require('../logger');
@@ -11,7 +19,7 @@ const fs = require('fs');
 const path = require('path');
 const { dataDir } = require('../paths');
 
-// controllerId -> Set of card numbers currently written to the panel.
+// controllerId -> Map(cardNo -> what was written: doors|valid until|name).
 // Saved to disk: if it only lived in memory, a restart would forget which
 // cards we wrote, and a card paused afterwards (resident owing, tag suspended
 // or expired) would never be deleted — the controller would keep opening for
@@ -20,18 +28,24 @@ const FILE = path.join(dataDir(), 'provisioned-cards.json');
 const provisioned = new Map();
 // Controllers whose panel we've read back this launch.
 const reconciled = new Set();
+// controllerId -> 'person' | 'card' (firmware without persons).
+const firmware = new Map();
 
 function loadProvisioned() {
   try {
     const saved = JSON.parse(fs.readFileSync(FILE, 'utf8'));
-    for (const [id, cards] of Object.entries(saved || {})) provisioned.set(id, new Set(cards));
+    for (const [id, cards] of Object.entries(saved || {})) {
+      // Older files list card numbers only: written without permissions, so
+      // an empty record makes them be written again, properly.
+      provisioned.set(id, new Map(Array.isArray(cards) ? cards.map((c) => [c, '']) : Object.entries(cards || {})));
+    }
   } catch { /* first run */ }
 }
 
 function saveProvisioned() {
   try {
     fs.mkdirSync(path.dirname(FILE), { recursive: true });
-    const out = Object.fromEntries([...provisioned.entries()].map(([id, set]) => [id, [...set]]));
+    const out = Object.fromEntries([...provisioned.entries()].map(([id, cards]) => [id, Object.fromEntries(cards)]));
     fs.writeFileSync(`${FILE}.tmp`, JSON.stringify(out));
     fs.renameSync(`${FILE}.tmp`, FILE);
   } catch (e) { log.warn('Could not save provisioned cards', { error: e.message }); }
@@ -39,7 +53,7 @@ function saveProvisioned() {
 
 loadProvisioned();
 
-function isapi(session, url, bodyJson) {
+function sdkIsapi(session, url, bodyJson) {
   const sdk = sdkLoader.load();
   const { api, koffi, structs } = sdk;
   if (!api.NET_DVR_STDXMLConfig) {
@@ -87,14 +101,97 @@ function isapi(session, url, bodyJson) {
   try { return JSON.parse(text); } catch { return { raw: text }; }
 }
 
+let isapiImpl = sdkIsapi; // tests swap in a fake controller
+
+/** One ISAPI call; a reply that reports a failure throws, with the controller's reason. */
+function call(session, url, body) {
+  const r = isapiImpl(session, url, body);
+  if (r && typeof r.statusCode === 'number' && r.statusCode !== 1) {
+    throw new BridgeError('ISAPI_FAILED', `ISAPI ${url} failed: ${r.subStatusCode || r.statusString || r.statusCode}`, JSON.stringify(r));
+  }
+  return r;
+}
+
+const why = (e) => `${e && e.message} ${e && e.hint}`;
+const alreadyExists = (e) => /already ?exist|AlreadyExist|repeat/i.test(why(e));
+const doesNotExist = (e) => /not ?exist|NotExist|noRecord/i.test(why(e));
+const notSupported = (e) => /notSupport|not ?support|SDK error 23\b|invalidOperation|Invalid Operation|methodNotAllowed/i.test(why(e));
+const badContent = (e) => /badParameters|Invalid Content|badJsonContent|badJsonFormat|SDK error 17\b/i.test(why(e));
+
+const MAX_END = '2037-12-31T23:59:59';
+
+/** ISO time → the controller's local-time format, never past what it accepts. */
+function localTime(iso) {
+  const d = new Date(iso);
+  if (!Number.isFinite(d.getTime())) return MAX_END;
+  const p = (n) => String(n).padStart(2, '0');
+  const s = `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}:${p(d.getSeconds())}`;
+  return s > MAX_END ? MAX_END : s;
+}
+
+const doorsOf = (c) => {
+  const doors = [...new Set((c.doors && c.doors.length ? c.doors : [1]).map(Number).filter((n) => n >= 1))].sort((a, b) => a - b);
+  return doors.length ? doors : [1];
+};
+const endOf = (c) => (c.validUntil ? localTime(c.validUntil) : MAX_END);
+const nameOf = (c) => String(c.name || 'VillaSafe card').slice(0, 32);
+/** What was written for a card, so a change of doors, expiry or name is written again. */
+const sigOf = (c) => `${doorsOf(c).join(',')}|${endOf(c)}|${nameOf(c)}`;
+
+function permission(c) {
+  const doors = doorsOf(c);
+  return {
+    Valid: { enable: true, beginTime: '2020-01-01T00:00:00', endTime: endOf(c), timeType: 'local' },
+    doorRight: doors.join(','),
+    RightPlan: doors.map((doorNo) => ({ doorNo, planTemplateNo: '1' })),
+  };
+}
+
+/** The person a card belongs to, created or updated. */
+function upsertPerson(session, c) {
+  const UserInfo = { employeeNo: c.employeeNo || c.cardNo, name: nameOf(c), userType: 'normal', ...permission(c) };
+  try {
+    call(session, 'POST /ISAPI/AccessControl/UserInfo/Record?format=json', { UserInfo });
+  } catch (e) {
+    if (!alreadyExists(e)) throw e;
+    call(session, 'PUT /ISAPI/AccessControl/UserInfo/Modify?format=json', { UserInfo });
+  }
+}
+
 function addCard(session, card) {
-  return isapi(session, 'POST /ISAPI/AccessControl/CardInfo/Record?format=json', {
-    CardInfo: {
-      employeeNo: card.employeeNo || card.cardNo,
-      cardNo: card.cardNo,
-      cardType: 'normalCard',
-    },
-  });
+  const CardInfo = { employeeNo: card.employeeNo || card.cardNo, cardNo: card.cardNo, cardType: 'normalCard', ...(card.extra || {}) };
+  try {
+    return call(session, 'POST /ISAPI/AccessControl/CardInfo/Record?format=json', { CardInfo });
+  } catch (e) {
+    if (alreadyExists(e)) return null;
+    throw e;
+  }
+}
+
+/** Person (with door rights and validity) then card; card-based firmware gets the rights on the card. */
+function writeCard(session, controllerId, c) {
+  if (firmware.get(controllerId) !== 'card') {
+    try {
+      upsertPerson(session, c);
+      firmware.set(controllerId, 'person');
+    } catch (e) {
+      if (!notSupported(e)) throw e;
+      firmware.set(controllerId, 'card');
+      log.info('Controller has no persons — writing door permission on each card', { controllerId });
+    }
+  }
+  if (firmware.get(controllerId) === 'card') {
+    try {
+      deleteCard(session, c.cardNo); // a card can't be modified in place; rewrite it with its permission
+    } catch { /* wasn't there */ }
+    try {
+      return addCard(session, { ...c, extra: permission(c) });
+    } catch (e) {
+      if (!badContent(e)) throw e;
+      return addCard(session, c); // firmware that takes no permission fields at all
+    }
+  }
+  return addCard(session, c);
 }
 
 /**
@@ -106,7 +203,7 @@ function listVillaSafeCards(session) {
   const found = new Set();
   const searchID = `villasafe-${Date.now()}`;
   for (let position = 0; position < 10000;) {
-    const r = isapi(session, 'POST /ISAPI/AccessControl/CardInfo/Search?format=json', {
+    const r = call(session, 'POST /ISAPI/AccessControl/CardInfo/Search?format=json', {
       CardInfoSearchCond: { searchID, searchResultPosition: position, maxResults: 30 },
     });
     const page = r && r.CardInfoSearch;
@@ -122,69 +219,93 @@ function listVillaSafeCards(session) {
 }
 
 function deleteCard(session, cardNo) {
-  return isapi(session, 'PUT /ISAPI/AccessControl/CardInfo/Delete?format=json', {
-    CardInfoDelCond: { CardNoList: [{ cardNo }] },
-  });
+  try {
+    return call(session, 'PUT /ISAPI/AccessControl/CardInfo/Delete?format=json', {
+      CardInfoDelCond: { CardNoList: [{ cardNo }] },
+    });
+  } catch (e) {
+    if (doesNotExist(e)) return null;
+    throw e;
+  }
+}
+
+/** Card and its person (deleting the person also removes any cards left on it). */
+function removeCard(session, controllerId, cardNo) {
+  deleteCard(session, cardNo);
+  if (firmware.get(controllerId) === 'card') return;
+  try {
+    call(session, 'PUT /ISAPI/AccessControl/UserInfo/Delete?format=json', {
+      UserInfoDelCond: { EmployeeNoList: [{ employeeNo: cardNo }] },
+    });
+  } catch (e) {
+    if (!doesNotExist(e) && !notSupported(e)) throw e;
+  }
 }
 
 /**
- * Diff the desired card list against what we last wrote and apply the delta.
+ * Bring the controller's cards in line with the desired list: add new ones,
+ * rewrite ones whose doors, expiry or name changed, remove the rest.
  * @param {string} controllerId
- * @param {Array<{cardNo:string, employeeNo?:string}>} desired
+ * @param {Array<{cardNo:string, employeeNo?:string, name?:string, doors?:number[], validUntil?:string|null}>} desired
  */
 async function sync(controllerId, desired) {
   const session = await registry.ensure(controllerId);
-  const want = new Set((desired || []).map(c => String(c.cardNo).toUpperCase()).filter(Boolean));
-  const have = provisioned.get(controllerId) || new Set();
+  const want = new Map((desired || []).filter((c) => c && c.cardNo).map((c) => [String(c.cardNo).toUpperCase(), { ...c, cardNo: String(c.cardNo).toUpperCase() }]));
+  const have = provisioned.get(controllerId) || new Map();
 
   // Once per launch, add what the panel actually holds from us to our record,
-  // so cards written before this record existed are removed too.
+  // so cards written before this record existed are fixed up or removed too.
   if (!reconciled.has(controllerId)) {
     try {
-      for (const cardNo of listVillaSafeCards(session)) have.add(cardNo);
+      for (const cardNo of listVillaSafeCards(session)) if (!have.has(cardNo)) have.set(cardNo, '');
       reconciled.add(controllerId);
     } catch (e) {
       log.warn('Could not read cards back from the controller', { controllerId, error: e.message });
     }
   }
 
-  const toAdd = [...want].filter(c => !have.has(c));
-  const toRemove = [...have].filter(c => !want.has(c));
-  if (!toAdd.length && !toRemove.length) {
-    return { controllerId, added: 0, removed: 0, unchanged: want.size };
+  const toWrite = [...want.values()].filter((c) => have.get(c.cardNo) !== sigOf(c));
+  const toRemove = [...have.keys()].filter((cardNo) => !want.has(cardNo));
+  if (!toWrite.length && !toRemove.length) {
+    return { controllerId, added: 0, updated: 0, removed: 0, unchanged: want.size };
   }
 
   const errors = [];
   let added = 0;
+  let updated = 0;
   let removed = 0;
-  for (const cardNo of toAdd) {
+  for (const c of toWrite) {
+    const existed = have.has(c.cardNo);
     try {
-      const card = desired.find(d => String(d.cardNo).toUpperCase() === cardNo) || { cardNo };
-      addCard(session, { ...card, cardNo });
-      have.add(cardNo);
-      added++;
-    } catch (e) { errors.push({ cardNo, op: 'add', error: e.message }); }
+      writeCard(session, controllerId, c);
+      have.set(c.cardNo, sigOf(c));
+      if (existed) updated++; else added++;
+    } catch (e) { errors.push({ cardNo: c.cardNo, op: existed ? 'update' : 'add', error: e.message }); }
   }
   for (const cardNo of toRemove) {
-    try { deleteCard(session, cardNo); have.delete(cardNo); removed++; }
+    try { removeCard(session, controllerId, cardNo); have.delete(cardNo); removed++; }
     catch (e) { errors.push({ cardNo, op: 'remove', error: e.message }); }
   }
   provisioned.set(controllerId, have);
   saveProvisioned();
-  log.info('Card provisioning applied', { controllerId, added, removed, errors: errors.length });
-  return { controllerId, added, removed, total: have.size, errors };
+  log.info('Card provisioning applied', { controllerId, added, updated, removed, errors: errors.length });
+  if (errors.length) log.warn('Some cards were not written to the controller', { controllerId, first: errors[0] });
+  return { controllerId, added, updated, removed, total: have.size, errors };
 }
 
 function state() {
-  return [...provisioned.entries()].map(([controllerId, set]) => ({
-    controllerId, cards: set.size,
+  return [...provisioned.entries()].map(([controllerId, cards]) => ({
+    controllerId, cards: cards.size, firmware: firmware.get(controllerId) || null,
   }));
 }
 
 function reset(controllerId) {
-  if (controllerId) { provisioned.delete(controllerId); reconciled.delete(controllerId); }
-  else { provisioned.clear(); reconciled.clear(); }
+  if (controllerId) { provisioned.delete(controllerId); reconciled.delete(controllerId); firmware.delete(controllerId); }
+  else { provisioned.clear(); reconciled.clear(); firmware.clear(); }
   saveProvisioned();
 }
 
-module.exports = { sync, state, reset, addCard, deleteCard };
+module.exports = {
+  sync, state, reset, addCard, deleteCard,
+  _internal: { setIsapi: (fn) => { isapiImpl = fn || sdkIsapi; }, sigOf, localTime },
+};

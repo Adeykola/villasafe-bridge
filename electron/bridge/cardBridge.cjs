@@ -86,28 +86,68 @@ async function pushApprovedTags(tags) {
   return payload.length;
 }
 
-/** Write the approved card list into each Hikvision controller behind a lane. */
-async function provisionControllers(lanes, tags) {
-  const results = [];
-  const seen = new Set();
+/** The doors a lane's Hikvision device opens (one, or entry and exit for a turnstile). */
+function doorsOfDevice(params) {
+  return [params.doorNo, params.entryDoorNo, params.exitDoorNo]
+    .map((n) => parseInt(n, 10))
+    .filter((n) => n >= 1)
+    .filter((n, i, all) => all.indexOf(n) === i)
+    .concat(parseInt(params.doorNo, 10) >= 1 ? [] : [1]);
+}
+
+/**
+ * When the controller itself must stop opening for a tag — its expiry, or the
+ * moment the resident's next bill falls overdue — so it pauses on time even
+ * with this PC switched off.
+ */
+function validUntilOf(t) {
+  const ends = [t.valid_until, t.owing_override ? null : t.owing_from]
+    .filter(Boolean)
+    .map((s) => new Date(s).getTime())
+    .filter(Number.isFinite);
+  return ends.length ? new Date(Math.min(...ends)).toISOString() : null;
+}
+
+/**
+ * What each Hikvision controller behind the lanes should hold: every tag that
+ * may open now, as a card on a person allowed through the doors of the lanes
+ * it may use, valid until it expires or its resident's next bill falls due.
+ */
+function desiredCards(lanes, tags) {
+  const byController = new Map(); // controllerId → { params, lanes: [{ laneId, doors }] }
   for (const lane of lanes || []) {
     for (const d of (lane.devices || []).filter(x => x.driver === 'hikvision')) {
       const params = d.params || {};
-      const controllerId = hik.controllerIdFor(params);
-      if (seen.has(controllerId)) continue;
-      seen.add(controllerId);
-      const cards = approvedFor(tags, lane.id).map(t => {
-        const cardNo = controllerCardNo(t.tag_uid);
-        return { cardNo, employeeNo: cardNo };
-      });
-      try {
-        await hik.ensureController(params);
-        const r = await hik.bridgeRequest('POST', '/api/cards/provision', { controllerId, cards });
-        results.push(r);
-      } catch (e) {
-        diagnostics.log(`Card provisioning failed for ${controllerId}: ${e.message}`);
-        results.push({ controllerId, error: e.message });
-      }
+      const id = hik.controllerIdFor(params);
+      if (!byController.has(id)) byController.set(id, { params, lanes: [] });
+      byController.get(id).lanes.push({ laneId: lane.id, doors: doorsOfDevice(params) });
+    }
+  }
+  const out = new Map();
+  for (const [controllerId, { params, lanes: here }] of byController) {
+    const cards = [];
+    for (const t of approvedFor(tags, null)) {
+      const doors = [...new Set(here.filter((l) => !t.lane_id || t.lane_id === l.laneId).flatMap((l) => l.doors))].sort((a, b) => a - b);
+      if (!doors.length) continue; // locked to a lane on another controller
+      const cardNo = controllerCardNo(t.tag_uid);
+      cards.push({ cardNo, employeeNo: cardNo, name: t.label || null, doors, validUntil: validUntilOf(t) });
+    }
+    out.set(controllerId, { params, cards });
+  }
+  return out;
+}
+
+/** Write the approved card list into each Hikvision controller behind a lane. */
+async function provisionControllers(lanes, tags) {
+  const results = [];
+  for (const [controllerId, { params, cards }] of desiredCards(lanes, tags)) {
+    try {
+      await hik.ensureController(params);
+      const r = await hik.bridgeRequest('POST', '/api/cards/provision', { controllerId, cards });
+      results.push(r);
+    } catch (e) {
+      diagnostics.log(`Card provisioning failed for ${controllerId}: ${e.message}`);
+      results.push({ controllerId, error: e.message });
     }
   }
   return results;
@@ -120,8 +160,8 @@ async function provisionControllers(lanes, tags) {
  */
 async function syncApproved(lanes, tags, { force = false } = {}) {
   const sig = JSON.stringify((tags || [])
-    .map(t => `${t.tag_uid}:${controllerCardNo(t.tag_uid)}:${t.paused ? 1 : 0}:${t.is_active === false ? 0 : 1}:${t.lane_id || ''}`)
-    .sort()) + JSON.stringify((lanes || []).map(l => l.id));
+    .map(t => `${t.tag_uid}:${t.paused ? 1 : 0}:${t.is_active === false ? 0 : 1}:${t.lane_id || ''}`)
+    .sort()) + JSON.stringify([...desiredCards(lanes, tags)].map(([id, { cards }]) => [id, cards]));
   if (!force && sig === lastProvisionSig) return null;
   // After a failure, retry once a minute rather than on every 5-second tick,
   // so an unplugged controller isn't hammered with logins.

@@ -50,7 +50,13 @@ router.post('/approved', (req, res) => {
 router.post('/provision', async (req, res, next) => {
   const p = z.object({
     controllerId: z.string().min(1),
-    cards: z.array(z.object({ cardNo: z.string().min(1), employeeNo: z.string().optional() })),
+    cards: z.array(z.object({
+      cardNo: z.string().min(1),
+      employeeNo: z.string().optional(),
+      name: z.string().nullish(),
+      doors: z.array(z.number().int().min(1).max(64)).optional(),
+      validUntil: z.string().nullish(),
+    })),
   }).safeParse(req.body);
   if (!p.success) return res.status(400).json({ error: p.error.flatten() });
   try { res.json(await provisioning.sync(p.data.controllerId, p.data.cards)); }
