@@ -1,0 +1,56 @@
+{
+  "name": "villasafe-whatsapp-connector",
+  "productName": "VillaSafe WhatsApp Connector",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Keeps VillaSafe's WhatsApp number linked (like WhatsApp Web) and relays messages to the communications inbox.",
+  "type": "module",
+  "main": "app/main.cjs",
+  "scripts": {
+    "start": "node index.js",
+    "app": "electron .",
+    "dist:win": "electron-builder --win nsis --x64"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "dependencies": {
+    "@whiskeysockets/baileys": "7.0.0-rc14",
+    "dotenv": "^16.4.5",
+    "pino": "^9.5.0",
+    "qrcode-terminal": "^0.12.0",
+    "qrcode": "^1.5.4"
+  },
+  "devDependencies": {
+    "electron": "^31.0.0",
+    "electron-builder": "^24.13.3"
+  },
+  "build": {
+    "appId": "com.villasafe.whatsappconnector",
+    "productName": "VillaSafeWhatsAppConnector",
+    "asar": false,
+    "directories": {
+      "output": "release",
+      "buildResources": "app/build"
+    },
+    "files": [
+      "index.js",
+      "app/**/*",
+      "package.json"
+    ],
+    "win": {
+      "target": [
+        "nsis"
+      ],
+      "icon": "app/build/icon.ico"
+    },
+    "nsis": {
+      "oneClick": true,
+      "perMachine": false,
+      "createDesktopShortcut": true,
+      "shortcutName": "VillaSafe WhatsApp Connector",
+      "artifactName": "VillaSafeWhatsAppConnector-Setup.${ext}",
+      "runAfterFinish": true
+    }
+  }
+}

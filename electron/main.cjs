@@ -1,4 +1,5 @@
 const { app, BrowserWindow, ipcMain, powerSaveBlocker, Tray, Menu } = require('electron');
+const { execFile } = require('child_process');
 const path = require('path');
 const crypto = require('crypto');
 const Store = require('./config/laneStore.cjs');
@@ -46,13 +47,28 @@ if (!isFirstInstance) {
   app.on('second-instance', () => showWindow());
 }
 
+// Its own name in Windows' startup list. Electron's default name is shared by
+// every Electron app (1.2.5 used it), so another VillaSafe app on the same PC —
+// the WhatsApp connector — would replace the bridge's entry.
+const APP_ID = 'com.villasafe.gatebridge';
+const STARTUP_NAME = 'VillaSafe Gate Bridge';
+const SHARED_STARTUP_NAME = 'electron.app.Electron';
+if (process.platform === 'win32') app.setAppUserModelId(APP_ID);
+
 function startWithWindows() {
   if (!app.isPackaged || process.platform === 'linux') return;
   try {
-    app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true, args: ['--hidden'] });
+    app.setLoginItemSettings({ openAtLogin: true, openAsHidden: true, name: STARTUP_NAME, args: ['--hidden'] });
   } catch (e) {
     diagnostics.log(`Could not set the bridge to start with Windows: ${e.message}`);
   }
+  if (process.platform !== 'win32') return;
+  // Remove the shared-name entry 1.2.5 wrote, but only if it starts this bridge.
+  const RUN = 'HKCU\\Software\\Microsoft\\Windows\\CurrentVersion\\Run';
+  execFile('reg', ['query', RUN, '/v', SHARED_STARTUP_NAME], (err, out) => {
+    if (err || !String(out).toLowerCase().includes(process.execPath.toLowerCase())) return;
+    execFile('reg', ['delete', RUN, '/v', SHARED_STARTUP_NAME, '/f'], () => {});
+  });
 }
 
 function showWindow() {

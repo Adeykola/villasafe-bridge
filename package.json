@@ -1,6 +1,6 @@
 {
   "name": "villasafe-gate-bridge",
-  "version": "1.2.5",
+  "version": "1.2.6",
   "description": "VillaSafe Gate Bridge — turnstiles, boom barriers, tyre killers and Hikvision controllers in one app",
   "main": "electron/main.cjs",
   "scripts": {

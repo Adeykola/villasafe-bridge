@@ -44,6 +44,10 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.6** — The bridge's start-with-Windows entry has its own name. 1.2.5
+  used Electron's default, which every Electron app shares, so installing
+  another VillaSafe app on the same PC (the WhatsApp connector) replaced it
+  and the bridge stopped starting by itself; the old shared entry is removed.
 - **v1.2.5** — Tags work offline through a Hikvision controller. Cards were
   written into the controller with no person, door permission or validity,
   so the controller refused them whenever it had to decide alone (internet
