@@ -9,7 +9,7 @@
 // running, and `status()` explains why no card events arrive.
 const sdkLoader = require('./sdkLoader');
 const log = require('../../logger');
-const { normalizeCardNumber } = require('../../utils/wiegand');
+const { normalizeCardNumber, hikvisionW26ToHex } = require('../../utils/wiegand');
 
 const COMM_ALARM_ACS = 0x5002;
 
@@ -63,9 +63,15 @@ function decodeAcsAlarm(bytes) {
   const buf = Buffer.from(bytes);
   const rawCard = readCString(buf, CARD_NO_OFFSET, CARD_NO_LEN);
   if (!rawCard) return null;
+  // Wiegand-26 arrives as facility + card ("02159509" → 15E875, the reader's
+  // own bytes). Bridges before 1.2.10 read it as one number (20F395); that
+  // form is passed along too, so cards enrolled under it still match.
+  const plain = normalizeCardNumber(rawCard, 'auto');
+  const w26 = hikvisionW26ToHex(rawCard);
   return {
     rawCardNo: rawCard,
-    tagUid: normalizeCardNumber(rawCard, 'auto'),
+    tagUid: w26 || plain,
+    legacyUid: w26 && plain && plain !== w26 ? plain : null,
     readerNo: buf.readUInt32LE(READER_NO_OFFSET),
     doorNo: buf.readUInt32LE(DOOR_NO_OFFSET),
     major: buf.readUInt32LE(4),

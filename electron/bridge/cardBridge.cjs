@@ -16,12 +16,12 @@ let lastProvisionSig = '';
 // ---------------------------------------------------------------------------
 // Card numbers as the controller shows them
 //
-// VillaSafe keeps tag numbers in hex (90ABCD); a Hikvision controller shows a
-// Wiegand swipe as a decimal string (9481165, sometimes zero-padded). A card
-// written to the controller in hex never matches its own swipe, so the boom
-// wouldn't lift. The number the controller reports for each tag is learned from
-// its swipes and kept on this PC; until a tag has been swiped, its decimal form
-// is used.
+// VillaSafe keeps tag numbers in hex (15E875); a Hikvision controller shows a
+// Wiegand-26 swipe as 3 digits of facility code and 5 of card number
+// (02159509). A card written to the controller in hex never matches its own
+// swipe, so the boom wouldn't lift. The number the controller reports for each
+// tag is learned from its swipes and kept on this PC; until a tag has been
+// swiped, it's worked out in that form.
 
 const LEARNED_FILE = path.join(os.homedir(), '.villasafe-gate-bridge', 'controller-card-numbers.json');
 const LEARNED_LIMIT = 20000;
@@ -56,15 +56,23 @@ function learnCardNumber(tagUid, rawCardNo) {
   return true;
 }
 
+/** A Wiegand-26 number as a Hikvision controller shows it: "15E875" → "02159509". */
+function w26(hex) {
+  const n = parseInt(hex, 16);
+  return `${String((n >> 16) & 0xff).padStart(3, '0')}${String(n & 0xffff).padStart(5, '0')}`;
+}
+
 /** The card number to write into a controller for this tag. */
 function controllerCardNo(tagUid) {
   const uid = String(tagUid || '').replace(/[\s:_-]/g, '').toUpperCase();
   const seen = learnedMap().get(uid);
   if (seen) return seen;
-  // A Wiegand-sized number (26/34-bit): the controller shows it in decimal.
-  if (/^[0-9A-F]{1,9}$/.test(uid)) return BigInt(`0x${uid}`).toString(10);
+  // Wiegand-26 (6 hex digits): facility + card, as the controller shows it.
+  if (/^[0-9A-F]{1,6}$/.test(uid)) return w26(uid);
+  // Wiegand-34: the controller shows it as one decimal number.
+  if (/^[0-9A-F]{7,9}$/.test(uid)) return BigInt(`0x${uid}`).toString(10);
   // A full EPC: a Wiegand-26 reader passes its last 3 bytes on.
-  if (/^[0-9A-F]{16,}$/.test(uid)) return BigInt(`0x${uid.slice(-6)}`).toString(10);
+  if (/^[0-9A-F]{16,}$/.test(uid)) return w26(uid.slice(-6));
   return uid;
 }
 

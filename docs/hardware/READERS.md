@@ -73,25 +73,34 @@ In the S4A **RFID Reader Demo** tool, Basic Parameters (the values that work on 
 | Same ID interval | 6–10 |
 | Memory Block | **TID** |
 | Start Address / Data Length | **0 / 6** |
-| Byte Offset | **9** |
+| Byte Offset | **11** |
 | Auto Read Type | 6C+DATA |
 | Auto Read Interval / Delay | 10 / 1 |
 | Buzzer | Output only |
 
 Press **Set**, then **Reboot Reader**, then **Get** to confirm the settings stuck.
 
-Wiegand-26 carries only 3 bytes of the tag, and **Byte Offset** picks which
-3: 9 sends the last 3. On site the S4A sends them from the tag's **EPC** (the
-code you can rewrite), not the factory TID.
+Wiegand-26 carries only 3 bytes of the tag's EPC, and **Byte Offset** picks
+which 3. The S4A counts from the 2-byte PC word in front of the EPC, so
+**11 sends the EPC's last 3 bytes** — and 9 sends bytes 7–9, two too early.
 
-**New tags that all read the same number** (Palmgrove: every new tag read
-20F395) left the factory with the same EPC. Rewriting one in the S4A tool
-gave it its own number (0C3E00). So before enrolling new tags, write each a
-new EPC in the S4A tool with its **own last 6 hex characters** (000001,
-000002, …); hold it to the reader and check VillaSafe's Gate reader shows
-those 6 characters, then enrol it. Delete any card enrolled with a shared
-number first. VillaSafe's Scan card warns when a read matches a card that's
-already enrolled.
+Why it matters (Palmgrove, October 2026): factory tags on one roll have EPCs
+like `E2806915 0000 5015E875 7CE2` — chip maker and model, then a serial
+that only changes in its last bytes. With Byte Offset 9 every tag sent
+`15 E8 75`, the part they share; with 11 each sends its own `75 7C E2`.
+
+The Hikvision controller reports a Wiegand-26 number as 3 digits of facility
+code and 5 of card number (`02159509` = facility 21, card 59509 = `15E875`).
+Bridges before 1.2.10 read that as one decimal number and showed 20F395,
+which appears nowhere in the tag; from 1.2.10 VillaSafe shows the reader's
+own bytes, so with Byte Offset 11 the number in VillaSafe is **the last 6
+characters of the EPC in the S4A tool**. Cards enrolled under the old numbers
+keep working.
+
+A tag can still be given its own code by rewriting its EPC in the S4A tool
+(change the last 6 characters; don't use 000000, which VillaSafe treats as a
+garbled read). Delete any card enrolled with a shared number first; Scan card
+warns when a read matches a card that's already enrolled.
 
 - **Antenna power**: start at 15–20 dBm; raise until a car reads at the distance you want but cars in other lanes don't. Reading beyond 8 m usually means the antenna is aimed at another lane.
 - **Enrol by scanning**, never by typing the number printed on the tag: the reader sends part of the chip's ID, not the printed number. Keep other tags out of range while scanning — Scan card ignores tags the reader was already seeing before it opened.

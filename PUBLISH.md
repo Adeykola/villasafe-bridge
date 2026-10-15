@@ -44,6 +44,16 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.10** — Wiegand-26 tag numbers match the tag. A Hikvision controller
+  reports a Wiegand-26 card as 3 digits of facility code and 5 of card
+  number (`02159509` = facility 21, card 59509); the bridge read that as one
+  decimal number and showed 20F395, which appears nowhere in the tag. It now
+  shows the reader's own 3 bytes (`15E875`), which are part of the EPC the S4A
+  software shows — with the S4A's Byte Offset at 11, its last 6 characters.
+  Cards enrolled under the old numbers keep working, and cards written into
+  the controller use its own format. The reader guide explains Byte Offset 11
+  (the S4A counts from the PC word, so 9 sent the part of the serial every
+  tag on a roll shares).
 - **v1.2.9** — Card swipes come back by themselves after the gate PC loses
   the controller's network. The bridge's 15-second check never actually
   contacted the controller, so when the PC dropped off the gate network (a

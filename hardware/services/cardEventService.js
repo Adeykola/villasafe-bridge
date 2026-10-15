@@ -34,6 +34,8 @@ function push(evt) {
   const record = {
     id: ++seq,
     tagUid: evt.tagUid || evt.rawCardNo,
+    // The number as bridges before 1.2.10 read it, for cards enrolled then.
+    legacyUid: evt.legacyUid || null,
     rawCardNo: evt.rawCardNo,
     // Which controller it came from, so the bridge can find the lane (door
     // numbers repeat across controllers).

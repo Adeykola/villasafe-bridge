@@ -29,6 +29,30 @@ function hexToFacilityCard(hex) {
 }
 
 /**
+ * How a Hikvision controller reports a Wiegand-26 card: 3 digits of facility
+ * code, then 5 of card number. "02159509" is facility 21, card 59509 — the
+ * reader's 3 bytes 15 E8 75, which is what the S4A software shows inside the
+ * tag's EPC. (Read as one decimal number it would wrongly be 20F395.)
+ * Null when the number isn't in that form.
+ */
+function hikvisionW26ToHex(raw) {
+  const v = clean(raw);
+  if (!/^\d{8}$/.test(v)) return null;
+  const facility = Number(v.slice(0, 3));
+  const card = Number(v.slice(3));
+  if (facility > 255 || card > 65535) return null;
+  return facilityCardToHex(facility, card);
+}
+
+/** A Wiegand-26 number (6 hex digits) as a Hikvision controller shows it: "15E875" → "02159509". */
+function hexToHikvisionW26(hex) {
+  const v = clean(hex);
+  if (!/^[0-9A-F]{1,6}$/.test(v)) return null;
+  const { facility, card } = hexToFacilityCard(v);
+  return `${String(facility).padStart(3, '0')}${String(card).padStart(5, '0')}`;
+}
+
+/**
  * Normalise any supported input into the canonical hex UID.
  * @param {string|number} raw    value from the reader / controller / admin UI
  * @param {string} format        'auto' | 'hex' | 'epc' | 'wiegand26' | 'wiegand34' | 'facility_card'
@@ -84,10 +108,15 @@ function candidateForms(raw) {
     out.add(dec.padStart(10, '0'));
   }
   if (isDecimal(v)) out.add(String(BigInt(v)));
+  // Hikvision's facility + card form, both ways.
+  const w26 = hikvisionW26ToHex(v);
+  if (w26) out.add(w26);
+  if (/^[0-9A-F]{1,6}$/.test(v)) out.add(hexToHikvisionW26(v));
   return [...out];
 }
 
 module.exports = {
   clean, isHex, isDecimal,
   normalizeCardNumber, facilityCardToHex, hexToFacilityCard, candidateForms,
+  hikvisionW26ToHex, hexToHikvisionW26,
 };

@@ -148,14 +148,27 @@ const lastWiegandAt = new Map();
  * the card in its own list; the controller still opens on its own when this
  * PC is off.
  */
+/**
+ * The enrolled tag a controller swipe is, and the number to report it under:
+ * the reader's own bytes (facility + card), or — for a card enrolled before
+ * 1.2.10, when the controller's number was read as one decimal — that one.
+ */
+function tagForSwipe(e) {
+  const primary = String(e.tagUid || e.rawCardNo || '').toUpperCase();
+  const legacy = e.legacyUid ? String(e.legacyUid).toUpperCase() : null;
+  const tag = tagStore.find(primary);
+  if (tag || !legacy) return { tagUid: primary, tag };
+  const old = tagStore.find(legacy);
+  return old ? { tagUid: legacy, tag: old } : { tagUid: primary, tag: null };
+}
+
 async function drainWiegandReads() {
   let events = [];
   try { events = await cardBridge.drainCardEvents(); } catch { return; }
   const now = Date.now();
   for (const e of events) {
-    const tagUid = String(e.tagUid || e.rawCardNo || '').toUpperCase();
+    const { tagUid, tag } = tagForSwipe(e);
     if (!tagUid) continue;
-    const tag = tagStore.find(tagUid);
     // The number exactly as this controller shows it, so the cards written
     // into it match its own swipes.
     if (e.rawCardNo) {
@@ -628,6 +641,7 @@ function isOnline() { return status.online !== false; }
 function isLicensed() { return !licence.locked; }
 
 module.exports = {
+  _internal: { tagForSwipe },
   startBridge, stopBridge, getStatus, isLicensed,
   runCommandLocal, runDeviceLocal, getLanes, getRfidTags, refreshDeviceHealth, isOnline,
 };
