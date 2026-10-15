@@ -1,12 +1,37 @@
 // Per-controller SDK session — login, heartbeat, auto-reconnect.
+//
+// The heartbeat really checks the controller is still there (its SDK port
+// answers). When the PC drops off the gate network — a cable pulled, Wi-Fi
+// switching to a hotspot — the login and the swipe channel die with it, and
+// the SDK doesn't always bring them back. So a failed check logs in again
+// (with back-off) until the controller answers, and the card-event service is
+// told, so card swipes reach the bridge again within seconds, not after a restart.
+const net = require('net');
 const sdkLoader = require('./sdkLoader');
 const { describeLogin } = require('./errors');
 const { BridgeError } = require('../../utils/errorMap');
 const log = require('../../logger');
 
 const HEARTBEAT_MS = 15000;
+const PROBE_TIMEOUT_MS = 3000;
 const BACKOFF_START = 1000;
 const BACKOFF_MAX = 30000;
+
+/** Does the controller's SDK port still answer from this PC? */
+function probePort(host, port, timeoutMs = PROBE_TIMEOUT_MS) {
+  return new Promise((resolve) => {
+    const s = net.connect({ host, port });
+    const done = (ok) => { s.destroy(); resolve(ok); };
+    s.setTimeout(timeoutMs, () => done(false));
+    s.once('connect', () => done(true));
+    s.once('error', () => done(false));
+  });
+}
+
+let probeImpl = probePort; // tests swap in a fake network
+const reconnectListeners = new Set();
+/** Be told when a session has logged in again after losing the controller. */
+function onReconnected(fn) { reconnectListeners.add(fn); return () => reconnectListeners.delete(fn); }
 
 class ControllerSession {
   constructor(controller) {
@@ -18,6 +43,10 @@ class ControllerSession {
     this._backoff = BACKOFF_START;
     this._hbTimer = null;
     this._reconnectTimer = null;
+    this._probing = false;
+    // Goes up with every successful login: the SDK can hand out the same user
+    // id again, so this is how the swipe channel knows it must be armed afresh.
+    this.generation = 0;
   }
 
   async connect() {
@@ -92,6 +121,7 @@ log.info(
     this.userId = uid;
     this.online = true;
     this.lastError = null;
+    this.generation += 1;
     this._backoff = BACKOFF_START;
     this.deviceInfo = koffi.decode(deviceInfo, structs.NET_DVR_DEVICEINFO_V40);
     log.info('Controller session opened', { controllerId: this.controller.id, uid });
@@ -100,6 +130,7 @@ log.info(
 
   async disconnect() {
     this._stopHeartbeat();
+    if (this._reconnectTimer) { clearTimeout(this._reconnectTimer); this._reconnectTimer = null; }
     if (this.userId >= 0) {
       try { sdkLoader.load().api.NET_DVR_Logout(this.userId); } catch { /* noop */ }
     }
@@ -116,16 +147,22 @@ log.info(
   }
 
   async _heartbeat() {
+    if (this._probing || this._reconnectTimer) return;
+    this._probing = true;
     try {
-      // A light no-op read: NET_DVR_GetLastError round-trip via ControlGateway "query" isn't
-      // supported, so we simply check userId validity by calling NET_DVR_GetLastError.
-      // A real heartbeat should use NET_DVR_GetDeviceStatus; we treat any SDK exception as failure.
-      if (this.userId < 0) throw new BridgeError('SESSION_INVALID', 'No active session');
-    } catch (e) {
+      const where = `${this.controller.ip}:${this.controller.sdkPort || 8000}`;
+      const answers = this.userId >= 0 && await probeImpl(this.controller.ip, Number(this.controller.sdkPort || 8000));
+      if (answers) return;
       this.online = false;
-      this.lastError = { code: 'HEARTBEAT_FAILED', message: e.message };
-      log.warn('Controller heartbeat failed — scheduling reconnect', { controllerId: this.controller.id });
+      this.lastError = {
+        code: 'HEARTBEAT_FAILED',
+        message: this.userId < 0 ? 'No active session' : `The controller stopped answering at ${where} — logging in again when it's back`,
+      };
+      log.warn('Controller connection lost — logging in again when it answers', { controllerId: this.controller.id });
+      this._stopHeartbeat();
       this._scheduleReconnect();
+    } finally {
+      this._probing = false;
     }
   }
 
@@ -135,8 +172,12 @@ log.info(
     this._backoff = Math.min(this._backoff * 2, BACKOFF_MAX);
     this._reconnectTimer = setTimeout(async () => {
       this._reconnectTimer = null;
-      try { await this.disconnect(); await this.connect(); }
-      catch (e) {
+      try {
+        await this.disconnect();
+        await this.connect();
+        log.info('Controller back — logged in again', { controllerId: this.controller.id });
+        for (const fn of reconnectListeners) { try { fn(this); } catch { /* a listener's problem */ } }
+      } catch (e) {
         log.warn('Reconnect failed', { controllerId: this.controller.id, error: e.message });
         // A refused password stays refused; retrying it would lock the controller.
         if (!e.credential) this._scheduleReconnect();
@@ -156,4 +197,7 @@ log.info(
   }
 }
 
-module.exports = { ControllerSession };
+module.exports = {
+  ControllerSession, onReconnected,
+  _internal: { setProbe: (fn) => { probeImpl = fn || probePort; }, HEARTBEAT_MS },
+};

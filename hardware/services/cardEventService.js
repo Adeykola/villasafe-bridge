@@ -2,6 +2,7 @@
 // them and forward them to VillaSafe Cloud as `rfidReads`.
 const events = require('../drivers/hikvision/events');
 const registry = require('../sessions/sessionRegistry');
+const { onReconnected } = require('../drivers/hikvision/session');
 const lanes = require('../config/lanes.store');
 const log = require('../logger');
 const { candidateForms } = require('../utils/wiegand');
@@ -56,6 +57,11 @@ function start() {
   if (started) return;
   started = true;
   events.onEvent((evt) => { if (evt.type === 'card') push(evt); });
+  // A controller that came back after a network drop: listen for its swipes again now.
+  onReconnected((session) => {
+    const r = events.subscribe(session);
+    log.info('Card swipes re-armed after reconnect', { controllerId: session.controller.id, ok: r.ok, error: r.error || null });
+  });
   log.info('Card event service started');
 }
 

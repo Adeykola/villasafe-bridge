@@ -219,6 +219,10 @@ function controllersOf(lanes) {
  * logged in to again (the service's background login guard).
  */
 let armFailedSig = '';
+// controllerId -> why its card swipes aren't reaching the bridge (cleared once armed).
+const swipeProblems = new Map();
+function swipeProblem(controllerId) { return swipeProblems.get(controllerId) || null; }
+
 async function armControllers(lanes) {
   const controllers = controllersOf(lanes);
   if (!controllers.size) return null;
@@ -230,6 +234,11 @@ async function armControllers(lanes) {
   if (!ids.length) return null;
   try {
     const r = await hik.bridgeRequest('POST', '/api/cards/arm', { controllerIds: ids });
+    for (const c of (r && r.controllers) || []) {
+      if (!c || !c.controllerId) continue;
+      if (c.ok === false) swipeProblems.set(c.controllerId, c.error || 'not listening');
+      else swipeProblems.delete(c.controllerId);
+    }
     const failed = (r && r.controllers || []).filter((c) => c && c.ok === false);
     const sig = failed.map((c) => `${c.controllerId}:${c.error}`).join('|');
     if (sig && sig !== armFailedSig) {
@@ -245,5 +254,5 @@ async function armControllers(lanes) {
 
 module.exports = {
   syncApproved, drainCardEvents, armControllers, pushApprovedTags, provisionControllers,
-  learnCardNumber, controllerCardNo, controllersOf, desiredCards,
+  learnCardNumber, controllerCardNo, controllersOf, desiredCards, swipeProblem,
 };

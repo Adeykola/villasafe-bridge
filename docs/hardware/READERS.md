@@ -64,12 +64,37 @@ For longer runs (30–100 m) drop to Wiegand-26 speed (default) and add a
 
 ### Reader configuration
 
-On the reader's config utility set:
+In the S4A **RFID Reader Demo** tool, Basic Parameters (the values that work on site):
 
-- **Output**: Wiegand-26 (default). Wiegand-34 also works — set `wiegandFormat: 34` in the lane row.
-- **Antenna power**: start at 15 dBm; raise until reads stabilise at your intended lane distance. Reading beyond 8 m usually means the antenna is aimed at another lane.
-- **Anti-collision**: on. Prevents duplicate reads when a car pauses at the boom.
-- **Buzzer**: on for guard-visible feedback.
+| Setting | Value |
+| --- | --- |
+| Output Mode | **WG26** |
+| Work Mode | Active |
+| Same ID interval | 6–10 |
+| Memory Block | **TID** |
+| Start Address / Data Length | **0 / 6** |
+| Byte Offset | **9** |
+| Auto Read Type | 6C+DATA |
+| Auto Read Interval / Delay | 10 / 1 |
+| Buzzer | Output only |
+
+Press **Set**, then **Reboot Reader**, then **Get** to confirm the settings stuck.
+
+Wiegand-26 carries only 3 bytes of the tag, and **Byte Offset** picks which
+3: 9 sends the last 3. On site the S4A sends them from the tag's **EPC** (the
+code you can rewrite), not the factory TID.
+
+**New tags that all read the same number** (Palmgrove: every new tag read
+20F395) left the factory with the same EPC. Rewriting one in the S4A tool
+gave it its own number (0C3E00). So before enrolling new tags, write each a
+new EPC in the S4A tool with its **own last 6 hex characters** (000001,
+000002, …); hold it to the reader and check VillaSafe's Gate reader shows
+those 6 characters, then enrol it. Delete any card enrolled with a shared
+number first. VillaSafe's Scan card warns when a read matches a card that's
+already enrolled.
+
+- **Antenna power**: start at 15–20 dBm; raise until a car reads at the distance you want but cars in other lanes don't. Reading beyond 8 m usually means the antenna is aimed at another lane.
+- **Enrol by scanning**, never by typing the number printed on the tag: the reader sends part of the chip's ID, not the printed number. Keep other tags out of range while scanning — Scan card ignores tags the reader was already seeing before it opened.
 
 ### DS-K2804 side
 

@@ -285,6 +285,9 @@ async function refreshDeviceHealthInner() {
       const r = d.driver === 'rfid'
         ? await rfid.probe(d)
         : await probeDriver(d, { background: true });
+      // The controller opens the gate, but its card swipes may still not be reaching the bridge.
+      const swipes = d.driver === 'hikvision' && r.ok ? cardBridge.swipeProblem(controllerIdFor(d.params || {})) : null;
+      if (swipes) r.note = `Opens, but card swipes aren't reaching the bridge: ${swipes}`;
       next.push({
         lane_id: lane.id,
         device_index: i,

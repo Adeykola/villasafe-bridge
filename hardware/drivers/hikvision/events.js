@@ -135,7 +135,8 @@ function subscribe(session) {
   const armed = alarmHandles.get(session.controller.id);
   // Still on the login it was armed on: nothing to do. After the controller
   // rebooted or the bridge logged in again, that channel is gone — arm afresh.
-  if (armed && armed.userId === session.userId) return { ok: true, alreadyArmed: true };
+  // (The SDK can reuse a user id, so the login's generation is compared too.)
+  if (armed && armed.userId === session.userId && armed.generation === session.generation) return { ok: true, alreadyArmed: true };
   if (armed) unsubscribe(session.controller.id);
   if (!ensureRegistered()) return { ok: false, error: registrationError };
 
@@ -166,7 +167,7 @@ function subscribe(session) {
     if (handle < 0) {
       return { ok: false, error: `NET_DVR_SetupAlarmChan_V41 failed (SDK error ${api.NET_DVR_GetLastError()})` };
     }
-    alarmHandles.set(session.controller.id, { handle, userId: session.userId });
+    alarmHandles.set(session.controller.id, { handle, userId: session.userId, generation: session.generation });
     log.info('Armed access-control alarm channel', { controllerId: session.controller.id, handle });
     return { ok: true, handle };
   } catch (e) {

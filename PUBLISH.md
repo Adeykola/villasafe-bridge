@@ -44,6 +44,16 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.9** — Card swipes come back by themselves after the gate PC loses
+  the controller's network. The bridge's 15-second check never actually
+  contacted the controller, so when the PC dropped off the gate network (a
+  cable pulled, Wi-Fi moving to a hotspot) it kept a dead login: the gate
+  still opened from VillaSafe, but no tag swipe reached the bridge until it
+  was restarted (seen at Palmgrove). The check now asks the controller's SDK
+  port; when it stops answering the bridge logs in again with back-off as soon
+  as it's back and re-arms the swipe channel straight away, even when the SDK
+  reuses the same login id. If swipes still aren't arriving, VillaSafe's Gate
+  reader and the Health page say so next to the controller.
 - **v1.2.8** — A **Registered** page shows every tag VillaSafe has given the
   PC (whether it opens now, or why not) and, read from each Hikvision device
   behind a lane, the people, cards, faces and fingerprints stored on it. Each
