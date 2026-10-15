@@ -2,6 +2,7 @@ const { Router } = require('express');
 const { z } = require('zod');
 const cardEvents = require('../services/cardEventService');
 const provisioning = require('../services/cardProvisioning');
+const deviceRegistry = require('../services/deviceRegistry');
 
 const router = Router();
 
@@ -60,6 +61,12 @@ router.post('/provision', async (req, res, next) => {
   }).safeParse(req.body);
   if (!p.success) return res.status(400).json({ error: p.error.flatten() });
   try { res.json(await provisioning.sync(p.data.controllerId, p.data.cards)); }
+  catch (e) { next(e); }
+});
+
+// What the controller holds: people, cards, faces and fingerprints (read-only).
+router.get('/registry/:controllerId', async (req, res, next) => {
+  try { res.json(await deviceRegistry.read(req.params.controllerId)); }
   catch (e) { next(e); }
 });
 

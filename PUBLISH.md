@@ -44,6 +44,22 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.8** — A **Registered** page shows every tag VillaSafe has given the
+  PC (whether it opens now, or why not) and, read from each Hikvision device
+  behind a lane, the people, cards, faces and fingerprints stored on it. Each
+  tag is checked against the devices: on them, missing from one, or still on
+  one while paused. Reading changes nothing on the devices and works over the
+  estate network with no internet. The **Offline** page now counts only passes
+  that can still be used, lists every pass with where it's up to, and removes
+  used, expired and revoked ones (one at a time or all at once). They also
+  clear themselves 12 hours after they finish, stay off through the next sync
+  unless VillaSafe makes them usable again, and a scan of one still says why
+  it's refused. The gates stop when the estate hasn't paid VillaSafe: VillaSafe
+  refuses the bridge when the estate is switched off or past its
+  subscription's last day, and tells the bridge that day, so it locks on time
+  with no internet, after a restart, and even if the PC's clock is set back.
+  Cards on the Hikvision controllers run out on the same day, so they stop on
+  their own too. A banner warns a week before; paying unlocks within a minute.
 - **v1.2.7** — Tags really do work offline on DS-K2804-class Hikvision
   controllers. No card ever reached the controller before: every ISAPI call
   went out with the wrong structure size (SDK error 17), and once that was

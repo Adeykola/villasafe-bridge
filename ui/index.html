@@ -183,6 +183,7 @@
       min-height: 100%; display: grid; grid-template-columns: minmax(0, 1.05fr) minmax(0, 1fr); gap: 48px; align-items: center;
       max-width: 1040px; margin: 0 auto; padding: 20px 0;
     }
+    .pair.solo { grid-template-columns: minmax(0, 760px); justify-content: center; }
     .pair-eyebrow { color: var(--amber); font-size: 12px; font-weight: 800; letter-spacing: .16em; text-transform: uppercase; }
     .pair-title { margin: 12px 0 14px; font-size: clamp(34px, 4.4vw, 54px); font-weight: 800; letter-spacing: -.045em; line-height: .98; }
     .pair-title span { color: var(--blue); }
@@ -305,6 +306,73 @@
     .pill.ok { color: #7ee2a8; border-color: rgba(31,191,104,.35); background: rgba(31,191,104,.08); }
     .pill.bad { color: #ff9a9d; border-color: rgba(229,72,77,.4); background: rgba(229,72,77,.08); }
 
+    /* ---------- Lists: passes, tags, devices ---------- */
+    .stats { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 12px; margin-bottom: 22px; }
+    .stat { background: var(--panel); border: 1px solid var(--line); border-radius: 16px; padding: 14px 16px; animation: rise .5s var(--ease) both; }
+    .stat .k { font-size: 11px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--faint); }
+    .stat .v { font-size: 32px; font-weight: 800; letter-spacing: -.04em; line-height: 1.05; margin-top: 8px; }
+    .stat .s { font-size: 12px; color: var(--muted); margin-top: 3px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin: 0 0 12px; }
+    .search {
+      flex: 1; min-width: 220px; padding: 10px 13px; border-radius: 12px; border: 1px solid var(--line);
+      background: var(--bg); color: var(--text); font: inherit; font-size: 13.5px;
+    }
+    .search:focus { outline: none; border-color: var(--blue); }
+    .seg { display: inline-flex; gap: 4px; padding: 4px; border-radius: 12px; background: var(--bg); border: 1px solid var(--line); flex-wrap: wrap; }
+    .seg button {
+      border: 0; background: transparent; color: var(--muted); padding: 7px 12px; border-radius: 9px; cursor: pointer;
+      font-size: 12.5px; font-weight: 700; transition: background .2s var(--ease), color .2s var(--ease);
+    }
+    .seg button:hover { color: var(--text); }
+    .seg button.on { background: var(--panel-2); color: var(--text); box-shadow: inset 0 0 0 1px var(--line); }
+    .seg .n { color: var(--faint); font-weight: 600; margin-left: 6px; }
+    .rows { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+    .rows > li {
+      display: grid; gap: 14px; align-items: center; padding: 11px 14px; border-radius: 12px;
+      background: var(--bg); border: 1px solid var(--line-soft); animation: slideIn .4s var(--ease) both;
+    }
+    .rows.tags > li { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) minmax(0, 1fr) 104px; }
+    .rows.passes > li { grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 96px 86px; }
+    .rows.people > li { grid-template-columns: minmax(0, 1.3fr) minmax(0, 1fr) 84px 128px minmax(0, .8fr); }
+    .rows.people > li > .st { justify-self: end; }
+    .rows.cards > li { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 96px minmax(0, .8fr); }
+    .rows > li.more { display: block; background: transparent; border: 0; padding: 8px 2px; color: var(--faint); font-size: 12.5px; animation: none; }
+    .rows .t { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rows .sub { color: var(--muted); font-size: 12.5px; margin-top: 2px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .rows .end { justify-self: end; }
+    .rows > li > .st { justify-self: start; }
+    .rows > li > .st.end { justify-self: end; }
+    .mono { font-family: var(--mono); font-size: 12.5px; }
+    .st {
+      display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; white-space: nowrap;
+      font-size: 12px; font-weight: 700; border: 1px solid var(--line); color: var(--muted); background: var(--panel-2);
+      max-width: 100%; overflow: hidden; text-overflow: ellipsis;
+    }
+    .st.ok { color: #7ee2a8; border-color: rgba(31,191,104,.35); background: rgba(31,191,104,.08); }
+    .st.warn { color: #f8d99a; border-color: rgba(244,175,31,.4); background: rgba(244,175,31,.08); }
+    .st.bad { color: #ff9a9d; border-color: rgba(229,72,77,.4); background: rgba(229,72,77,.08); }
+    .st.info { color: #9cc0f0; border-color: rgba(76,134,214,.4); background: rgba(76,134,214,.1); }
+    .x-btn {
+      justify-self: end; border: 1px solid var(--line); background: transparent; color: var(--muted); cursor: pointer;
+      border-radius: 9px; padding: 6px 11px; font-size: 12px; font-weight: 700; transition: color .2s var(--ease), border-color .2s var(--ease);
+    }
+    .x-btn:hover { color: #ff9a9d; border-color: rgba(229,72,77,.5); }
+    .panel-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; flex-wrap: wrap; }
+    .dev { background: var(--panel); border: 1px solid var(--line); border-radius: 20px; padding: 20px; margin-bottom: 16px; animation: rise .5s var(--ease) both; }
+    .dev-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; margin-bottom: 14px; }
+    .dev-name { font-size: 20px; font-weight: 800; letter-spacing: -.02em; }
+    .dev-meta { color: var(--muted); font-size: 12.5px; margin-top: 3px; }
+    .dev-totals { display: flex; gap: 22px; flex-wrap: wrap; }
+    .dev-totals div { text-align: right; }
+    .dev-totals b { display: block; font-size: 24px; font-weight: 800; letter-spacing: -.03em; line-height: 1.1; }
+    .dev-totals span { font-size: 10.5px; color: var(--faint); font-weight: 800; letter-spacing: .12em; text-transform: uppercase; }
+    .dev-note { color: var(--muted); font-size: 12.5px; margin: -4px 0 12px; }
+    @media (max-width: 1100px) {
+      .rows.people > li { grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) 84px 128px; gap: 10px; }
+      .rows.people .wide { display: none; }
+      .rows.tags > li { grid-template-columns: minmax(0, 1.2fr) minmax(0, .9fr) minmax(0, 1fr) 96px; gap: 10px; }
+    }
+
     /* ---------- Toasts ---------- */
     .toasts { position: fixed; right: 22px; bottom: 22px; display: grid; gap: 8px; z-index: 50; }
     .toast {
@@ -344,6 +412,10 @@
       <button class="rail-btn" data-page="offline" title="Offline scanning">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="2" y="14" width="20" height="8" rx="2"/><path d="M6.01 18H6"/><path d="M10.01 18H10"/><path d="M15 10v4"/><path d="M17.84 7.17a4 4 0 0 0-5.66 0"/><path d="M20.66 4.34a8 8 0 0 0-11.31 0"/></svg>
         Offline
+      </button>
+      <button class="rail-btn" data-page="registered" title="Tags, cards, faces and fingerprints">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 10h2"/><path d="M16 14h2"/><path d="M6.17 15a3 3 0 0 1 5.66 0"/><circle cx="9" cy="11" r="2"/><rect x="2" y="5" width="20" height="14" rx="2"/></svg>
+        Registered
       </button>
       <button class="rail-btn" data-page="health" title="Health check">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M20 13c0 5-3.5 7.5-7.66 8.95a1 1 0 0 1-.67-.01C7.5 20.5 4 18 4 13V6a1 1 0 0 1 1-1c2 0 4.5-1.2 6.24-2.72a1.17 1.17 0 0 1 1.52 0C14.51 3.81 17 5 19 5a1 1 0 0 1 1 1z"/><path d="m9 12 2 2 4-4"/></svg>
@@ -428,15 +500,20 @@
           <div class="pair">
             <div>
               <div class="pair-eyebrow lock-eyebrow">Gates locked</div>
-              <h1 class="pair-title">This PC needs <span>a licence key.</span></h1>
+              <h1 class="pair-title" id="licenceTitle">This PC needs <span>a licence key.</span></h1>
               <p class="page-sub" id="licenceWhy">VillaSafe hasn't confirmed a desktop licence for this estate.</p>
-              <ol class="pair-steps">
+              <ol class="pair-steps" id="unpaidSteps" hidden>
+                <li><b>1</b><span>The estate admin pays the VillaSafe subscription, from <strong>Billing</strong> in VillaSafe.</span></li>
+                <li><b>2</b><span>Once VillaSafe approves the payment, this PC unlocks by itself within a minute. It needs the internet to hear about it.</span></li>
+                <li><b>3</b><span>Until then, the lanes, guard phones on this network and the tag readers stay locked, and cards on the Hikvision controllers have run out too.</span></li>
+              </ol>
+              <ol class="pair-steps" id="licenceSteps">
                 <li><b>1</b><span>Ask your estate admin or VillaSafe for the estate's <strong>desktop licence key</strong>.</span></li>
                 <li><b>2</b><span>Type it in here. You don't need to pair again.</span></li>
                 <li><b>3</b><span>Until then, guards can still check guests in on their phones — only this PC's lanes are locked.</span></li>
               </ol>
             </div>
-            <div class="pair-card">
+            <div class="pair-card" id="licenceCard">
               <h3>Enter licence key</h3>
               <p>It looks like <span class="num" style="font-family:var(--mono)">VS-7KQ2M-…</span> and is the same for every gate PC in the estate.</p>
               <div class="field licence-field">
@@ -456,6 +533,7 @@
               <p class="page-sub">Open or close any lane. Buttons work even with no internet — actions sync when it's back.</p>
             </div>
           </div>
+          <div id="renewBanner"></div>
           <div id="offlineBanner"></div>
           <div class="lanes" id="lanes"></div>
           <div class="hero-empty" id="noLanes" hidden>
@@ -498,9 +576,11 @@
           <div class="grid-2">
             <div class="panel">
               <h3>Pass list on this PC</h3>
-              <div class="lan-hero"><span class="big num" id="lanPasses">0</span><span class="unit">passes ready</span></div>
+              <div class="lan-hero"><span class="big num" id="lanPasses">0</span><span class="unit">passes can be used</span></div>
               <div class="status-line"><span class="dot" id="lanStateDot"></span><span id="lanState">Waiting for the first pass list</span></div>
               <dl class="kv">
+                <dt>Guests inside now</dt><dd class="num" id="lanInside">0</dd>
+                <dt>Used or expired, still here</dt><dd class="num" id="lanFinished">0</dd>
                 <dt>Last updated</dt><dd id="lanSynced">—</dd>
                 <dt>Scans waiting to upload</dt><dd class="num" id="lanPending">0</dd>
                 <dt>Secure key</dt><dd id="lanKey">—</dd>
@@ -525,6 +605,48 @@
                 </ol>
               </details>
             </div>
+          </div>
+
+          <div class="panel" style="margin-top:18px">
+            <div class="panel-head">
+              <div>
+                <h3>Passes on this PC</h3>
+                <p class="desc" id="passNote">Used and expired passes leave this PC by themselves 12 hours after they finish.</p>
+              </div>
+              <button class="btn danger" id="clearPassesBtn" hidden>Remove finished passes</button>
+            </div>
+            <div class="toolbar">
+              <div class="seg" id="passSeg" role="tablist" aria-label="Which passes"></div>
+              <input class="search" id="passSearch" type="search" placeholder="Search guest name or purpose…" />
+            </div>
+            <ul class="rows passes" id="passRows"></ul>
+            <div class="hero-empty" id="passEmpty" hidden><div><h3 id="passEmptyTitle">No passes here</h3><p id="passEmptyText"></p></div></div>
+          </div>
+        </section>
+
+        <!-- ============ REGISTERED ============ -->
+        <section class="page" id="page-registered">
+          <div class="page-head">
+            <div>
+              <h2 class="page-title">Registered</h2>
+              <p class="page-sub">Every tag VillaSafe has given this PC, and the people, cards, faces and fingerprints stored on each Hikvision device at the gate.</p>
+            </div>
+            <div class="row-btns">
+              <span class="pill" id="regReadAt">Devices not read yet</span>
+              <button class="btn primary" id="readDevicesBtn">Read devices</button>
+            </div>
+          </div>
+          <div class="stats" id="regStats"></div>
+          <div class="toolbar">
+            <input class="search" id="regSearch" type="search" placeholder="Search a name, tag or card number…" />
+          </div>
+          <div class="section-label">VillaSafe tags on this PC</div>
+          <div class="toolbar"><div class="seg" id="tagSeg" role="tablist" aria-label="Which tags"></div></div>
+          <ul class="rows tags" id="tagRows"></ul>
+          <div class="hero-empty" id="tagEmpty" hidden><div><h3>No tags here</h3><p id="tagEmptyText">Tags enrolled in VillaSafe appear here within a minute.</p></div></div>
+          <div class="section-label">On the devices</div>
+          <div id="devOut">
+            <div class="hero-empty"><div><h3>Not read yet</h3><p>Press Read devices to see who is stored on each Hikvision controller and face terminal. It takes a few seconds, and the gates keep working.</p></div></div>
           </div>
         </section>
 
@@ -618,7 +740,8 @@
       document.querySelectorAll('.page').forEach((p) => p.classList.toggle('active', p.id === `page-${page}`));
       document.querySelectorAll('.rail-btn').forEach((b) => b.classList.toggle('active', b.dataset.page === page));
       if (page === 'activity') { unseenActivity = 0; updateBadge(); }
-      if (page === 'offline') refreshFirewall();
+      if (page === 'offline') { refreshFirewall(); loadPasses(); }
+      if (page === 'registered') { loadTags(); if (!devicesReadOnce) readDevices(); }
     }
     document.querySelectorAll('.rail-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -772,6 +895,21 @@
       const wasLocked = locked;
       locked = paired && !!status.licence?.locked;
       if (locked) $('licenceWhy').textContent = status.licence.message || "VillaSafe hasn't confirmed a desktop licence for this estate.";
+      // Not paid (or switched off by VillaSafe): no key to enter, just pay.
+      const unpaid = locked && ['unpaid', 'paused'].includes(status.licence?.reason);
+      $('licenceTitle').innerHTML = unpaid
+        ? (status.licence.reason === 'paused' ? 'VillaSafe has <span>paused this estate.</span>' : 'The VillaSafe subscription <span>has run out.</span>')
+        : 'This PC needs <span>a licence key.</span>';
+      $('unpaidSteps').hidden = !unpaid;
+      $('licenceSteps').hidden = unpaid;
+      $('licenceCard').hidden = unpaid;
+      $('licenceCard').parentElement.classList.toggle('solo', unpaid);
+      const sub = status.subscription || {};
+      $('renewBanner').innerHTML = paired && !locked && sub.paidUntil && sub.daysLeft != null && sub.daysLeft <= 7 ? `
+        <div class="banner">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
+          <div><strong>The VillaSafe subscription ends ${sub.daysLeft === 0 ? 'today' : sub.daysLeft === 1 ? 'tomorrow' : `in ${sub.daysLeft} days`}</strong> (${esc(new Date(sub.paidUntil).toLocaleDateString([], { day: 'numeric', month: 'long' }))}). Renew it in VillaSafe → Billing, or the gates stop working after that day — with or without internet.</div>
+        </div>` : '';
 
       if (!paired) {
         if (currentPage !== 'health') show('pair');
@@ -786,7 +924,9 @@
       // Connection chip
       const online = paired && status.online !== false;
       $('connDot').className = `dot ${!paired ? '' : online ? 'ok' : 'bad'}`;
-      $('connText').textContent = !paired ? 'Not paired' : locked ? 'Licence needed' : online ? 'Online' : 'No internet';
+      $('connText').textContent = !paired ? 'Not paired'
+        : locked ? (status.licence?.reason === 'unpaid' ? 'Subscription ended' : status.licence?.reason === 'paused' ? 'Paused by VillaSafe' : 'Licence needed')
+        : online ? 'Online' : 'No internet';
       if (locked) $('connDot').className = 'dot bad';
       $('heartbeat').innerHTML = !paired ? 'Not paired yet.' : online
         ? `<span style="color:#7ee2a8">Connected.</span> Checking in with VillaSafe every few seconds.`
@@ -802,9 +942,11 @@
       const lanReady = !!lan.hasKey && (lan.passes > 0 || !!lan.passesAt);
       $('lanChip').hidden = !paired;
       $('lanDot').className = `dot ${lanReady ? (lan.stale ? 'warn' : 'ok') : ''}`;
-      $('lanText').textContent = fwBlocked ? 'Phones blocked by firewall' : lanReady ? `${lan.passes} passes offline` : 'Offline scanning not ready';
+      $('lanText').textContent = fwBlocked ? 'Phones blocked by firewall' : lanReady ? `${lan.usable ?? lan.passes} passes offline` : 'Offline scanning not ready';
       if (fwBlocked) $('lanDot').className = 'dot bad';
-      $('lanPasses').textContent = lan.passes || 0;
+      $('lanPasses').textContent = lan.usable ?? lan.passes ?? 0;
+      $('lanInside').textContent = lan.inside || 0;
+      $('lanFinished').textContent = lan.finished || 0;
       $('lanStateDot').className = `dot ${lanReady ? (lan.stale ? 'warn' : 'ok') : ''}`;
       $('lanState').textContent = !lanReady ? 'Waiting for the first pass list from VillaSafe'
         : lan.stale ? 'Pass list is out of date — scans are still allowed but flagged for the estate office'
@@ -817,7 +959,8 @@
       const kindLabel = (a) => (a.kind === 'wifi' ? 'Wi-Fi' : a.kind === 'ethernet' ? 'cable' : a.iface);
       $('lanAddrs').textContent = addrs.length ? addrs.map((a) => `${a.address} (${kindLabel(a)})`).join(', ') : 'Not connected';
       $('lanTestUrl').textContent = `http://${addrs[0]?.address || '<this PC>'}:${lan.port || 8787}/v1/health`;
-      if (currentPage === 'offline') refreshFirewall();
+      if (currentPage === 'offline') { refreshFirewall(); loadPasses(); }
+      if (currentPage === 'registered') loadTags();
 
       if (paired) renderLanes(status);
     }
@@ -1055,6 +1198,300 @@
       toast(r.ok ? 'Gateway saved' : `Couldn't save: ${r.error}`, r.ok ? 'ok' : 'err');
       if (r.ok) refresh();
     };
+
+    // ---------- Lists (passes, tags, devices) ----------
+    const LIST_CAP = 200;
+    const SPIN = '<span class="spin" style="width:16px;height:16px;border-width:2px"></span>';
+    const when = (iso) => {
+      if (!iso) return '';
+      const d = new Date(iso);
+      return Number.isFinite(d.getTime()) ? d.toLocaleString([], { weekday: 'short', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' }) : '';
+    };
+    const timeOnly = (iso) => (iso ? new Date(iso).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' }) : '');
+    // Hikvision devices keep local times, and 2037-12-31 for "no end".
+    const deviceUntil = (s) => (!s ? 'No end date' : /^203[7-9]/.test(s) ? 'No end date' : `Until ${when(s)}`);
+    const has = (q, ...fields) => !q || fields.flat().some((f) => String(f ?? '').toLowerCase().includes(q));
+    const plural = (n, word) => `${n} ${word}${n === 1 ? '' : 's'}`;
+    const people = (n) => (n === 1 ? '1 person' : `${n} people`);
+    const more = (shown, total) => (total > shown ? `<li class="more">Showing ${shown} of ${total} — search to find the rest.</li>` : '');
+    function segHtml(options, value) {
+      return options.map((o) => `<button type="button" role="tab" aria-selected="${o.v === value}" data-v="${esc(o.v)}" class="${o.v === value ? 'on' : ''}">${esc(o.label)}${o.n != null ? `<span class="n num">${o.n}</span>` : ''}</button>`).join('');
+    }
+
+    // ---------- Guest passes on this PC ----------
+    const PASS_STATUS = { ready: ['Ready', 'ok'], upcoming: ['Upcoming', 'info'], inside: ['Inside', 'warn'], used: ['Used', ''], expired: ['Expired', 'bad'], revoked: ['Revoked', 'bad'] };
+    const FINISHED = new Set(['used', 'expired', 'revoked']);
+    let passData = null;
+    let passFilter = 'usable';
+    let passSig = '';
+    let clearArmed = null;
+
+    async function loadPasses() {
+      if (!window.bridge.passes) return;
+      try { passData = await window.bridge.passes(); } catch { return; }
+      renderPasses();
+    }
+    function passWhen(p) {
+      if (p.status === 'inside') return `In since ${timeOnly(p.check_in_time)}`;
+      if (p.status === 'used') return `Left ${when(p.check_out_time)}`;
+      if (p.status === 'upcoming') return `From ${when(p.valid_from)}`;
+      if (p.status === 'expired') return `Ran out ${when(p.valid_until)}`;
+      if (p.status === 'revoked') return 'Revoked by the estate';
+      return `Valid until ${when(p.valid_until)}`;
+    }
+    function renderPasses() {
+      if (!passData) return;
+      const c = passData.counts || {};
+      const usable = (c.ready || 0) + (c.upcoming || 0);
+      const finished = (c.used || 0) + (c.expired || 0) + (c.revoked || 0);
+      const q = $('passSearch').value.trim().toLowerCase();
+      const list = (passData.passes || [])
+        .filter((p) => passFilter === 'all'
+          || (passFilter === 'usable' ? p.status === 'ready' || p.status === 'upcoming'
+            : passFilter === 'inside' ? p.status === 'inside' : FINISHED.has(p.status)))
+        .filter((p) => has(q, p.name, p.purpose, p.code_hint));
+      const shown = list.slice(0, LIST_CAP);
+      const sig = JSON.stringify([passFilter, q, c, passData.removed, shown.map((p) => [p.id, p.status])]);
+      if (!clearArmed) {
+        $('clearPassesBtn').hidden = finished === 0;
+        $('clearPassesBtn').textContent = `Remove ${plural(finished, 'finished pass').replace('passs', 'passes')}`;
+      }
+      if (sig === passSig) return;
+      passSig = sig;
+      $('passNote').textContent = `Used and expired passes leave this PC by themselves ${passData.autoClearHours || 12} hours after they finish, or remove them now.`
+        + (passData.removed ? ` ${passData.removed} removed so far; scanning one still says why it can't be used.` : '');
+      $('passSeg').innerHTML = segHtml([
+        { v: 'usable', label: 'Can be used', n: usable },
+        { v: 'inside', label: 'Inside now', n: c.inside || 0 },
+        { v: 'finished', label: 'Used or expired', n: finished },
+        { v: 'all', label: 'All', n: (passData.passes || []).length },
+      ], passFilter);
+      $('passEmpty').hidden = list.length > 0;
+      $('passEmptyTitle').textContent = q ? 'No pass matches that' : passFilter === 'finished' ? 'Nothing used or expired' : passFilter === 'inside' ? 'Nobody inside on a pass' : 'No passes here';
+      $('passEmptyText').textContent = q ? 'Try part of the guest\'s name.' : passFilter === 'finished' ? 'Used and expired passes show up here until they clear.' : 'New guest passes reach this PC about a minute after they are created.';
+      $('passRows').innerHTML = shown.map((p, i) => {
+        const [label, tone] = PASS_STATUS[p.status] || [p.status, ''];
+        return `
+        <li style="animation-delay:${Math.min(i, 12) * 25}ms">
+          <div><div class="t">${esc(p.name || 'Guest')}</div><div class="sub">${esc([p.purpose, p.code_hint ? `code …${p.code_hint}` : '', p.access_type === 'recurring' ? 'comes and goes' : ''].filter(Boolean).join(' · ') || 'Guest pass')}</div></div>
+          <div class="sub">${esc(passWhen(p))}</div>
+          <span class="st ${tone} end">${esc(label)}</span>
+          ${FINISHED.has(p.status) ? `<button type="button" class="x-btn" data-remove="${esc(p.id)}" title="Take this pass off this PC">Remove</button>` : '<span></span>'}
+        </li>`;
+      }).join('') + more(shown.length, list.length);
+    }
+    $('passSeg').onclick = (e) => {
+      const b = e.target.closest('button[data-v]');
+      if (!b) return;
+      passFilter = b.dataset.v;
+      renderPasses();
+    };
+    $('passSearch').addEventListener('input', () => renderPasses());
+    $('passRows').onclick = async (e) => {
+      const b = e.target.closest('button[data-remove]');
+      if (!b) return;
+      b.disabled = true;
+      const r = await window.bridge.removePasses([b.dataset.remove]);
+      toast(r.removed ? 'Pass removed from this PC' : 'That pass can still be used, so it was kept', r.removed ? 'ok' : '');
+      passSig = '';
+      await loadPasses();
+      refresh();
+    };
+    $('clearPassesBtn').onclick = async () => {
+      const btn = $('clearPassesBtn');
+      if (!clearArmed) {
+        btn.classList.add('armed');
+        btn.textContent = 'Click again to remove them';
+        clearArmed = setTimeout(() => { clearArmed = null; btn.classList.remove('armed'); renderPasses(); }, 4000);
+        return;
+      }
+      clearTimeout(clearArmed);
+      clearArmed = null;
+      btn.classList.remove('armed');
+      btn.disabled = true;
+      const r = await window.bridge.removePasses();
+      btn.disabled = false;
+      toast(r.removed ? `Removed ${plural(r.removed, 'finished pass').replace('passs', 'passes')} from this PC` : 'Nothing to remove', 'ok');
+      addFeed({ kind: 'info', what: `Removed ${plural(r.removed || 0, 'used or expired pass').replace('passs', 'passes')}`, src: 'Guard' });
+      passSig = '';
+      await loadPasses();
+      refresh();
+    };
+
+    // ---------- Registered: tags, and what each device holds ----------
+    const TAG_STATUS = { ok: ['Opens', 'ok'], owing: ['Owing', 'warn'], suspended: ['Suspended', 'bad'], expired: ['Expired', 'bad'], wrong_lane: ['One lane', 'info'], unknown: ['Unknown', ''] };
+    const MODE = { person: 'People, cards, faces and fingerprints', card: 'Cards', sdk: 'Cards only' };
+    let tagData = null;
+    let devData = null;
+    let tagFilter = 'all';
+    let regSig = '';
+    let devicesReadOnce = false;
+    let readingDevices = false;
+
+    async function loadTags() {
+      if (!window.bridge.tags) return;
+      try { tagData = await window.bridge.tags(); } catch { return; }
+      renderRegistered();
+    }
+    async function readDevices() {
+      if (readingDevices || !window.bridge.readDevices) return;
+      readingDevices = true;
+      devicesReadOnce = true;
+      const btn = $('readDevicesBtn');
+      btn.disabled = true;
+      btn.innerHTML = `${SPIN} Reading devices…`;
+      let r;
+      try { r = await window.bridge.readDevices(); } catch (e) { r = { ok: false, error: e?.message }; }
+      readingDevices = false;
+      btn.disabled = false;
+      btn.textContent = 'Read again';
+      if (!r.ok) return toast(`Couldn't read the devices: ${r.error || 'no answer'}`, 'err');
+      devData = r;
+      regSig = '';
+      const failed = (r.controllers || []).filter((c) => !c.ok).length;
+      if (!(r.controllers || []).length) toast("This bridge's lanes have no Hikvision devices", '');
+      else if (failed) toast(`${plural(failed, 'device')} could not be read — see below`, 'err');
+      renderRegistered();
+    }
+    $('readDevicesBtn').onclick = () => readDevices();
+    $('regSearch').addEventListener('input', () => { regSig = ''; renderRegistered(); });
+    $('tagSeg').onclick = (e) => {
+      const b = e.target.closest('button[data-v]');
+      if (!b) return;
+      tagFilter = b.dataset.v;
+      regSig = '';
+      renderRegistered();
+    };
+
+    function presenceHtml(t, presence) {
+      if (!devData) return '<span class="sub">Read devices to check</span>';
+      const p = presence[t.uid];
+      if (!p) return '<span class="sub">—</span>';
+      if (p.state === 'on') return `<span class="st ok" title="${esc(p.on.join(', '))}">On ${esc(p.on.length > 1 ? plural(p.on.length, 'device') : p.on[0])}</span>`;
+      if (p.state === 'missing') return `<span class="st bad" title="It should be there: VillaSafe will write it at the next sync">Not on ${esc(p.missing.join(', '))}</span>`;
+      if (p.state === 'stale') return `<span class="st warn" title="It may not open now, but the device still holds it">Still on ${esc(p.stale.join(', '))}</span>`;
+      return `<span class="sub">${t.status === 'ok' ? 'Not on any device' : 'Kept off the devices'}</span>`;
+    }
+
+    function deviceHtml(c, q, i) {
+      const meta = [c.host, c.lanes?.length ? c.lanes.join(', ') : null, c.ok ? MODE[c.mode] || c.mode : null, c.ok ? `read ${ago(c.readAt)}` : null].filter(Boolean).join(' · ');
+      if (!c.ok) {
+        return `<div class="dev" style="animation-delay:${i * 60}ms"><div class="dev-head"><div><div class="dev-name">${esc(c.name)}</div><div class="dev-meta">${esc(meta)}</div></div><span class="st bad">Couldn't read it</span></div><p class="page-sub" style="max-width:none">${esc(c.error || 'No answer')}</p></div>`;
+      }
+      const t = c.totals || {};
+      const cardsOnly = c.mode !== 'person';
+      const totals = [
+        ['People', cardsOnly ? '—' : t.persons ?? 0],
+        ['Cards', t.cards ?? 0],
+        ['Faces', t.faces ?? '—'],
+        ['Fingerprints', t.fingerprints ?? '—'],
+      ].map(([k, v]) => `<div><b class="num">${esc(v)}</b><span>${k}</span></div>`).join('');
+      const note = c.mode === 'sdk' ? 'A door controller: it holds cards only, and has no face or fingerprint reader.'
+        : t.faces == null && t.fingerprints == null ? "This device doesn't report faces or fingerprints."
+        : [t.withFace != null ? `${people(t.withFace)} with a face` : '', t.withFingerprint != null ? `${t.withFingerprint} with fingerprints` : ''].filter(Boolean).join(' · ');
+      let rows;
+      let total;
+      if (cardsOnly) {
+        const list = (c.cards || []).filter((x) => has(q, x.cardNo, x.name, x.tag?.label, x.tag?.uid));
+        total = list.length;
+        rows = list.slice(0, LIST_CAP).map((x, j) => `
+          <li style="animation-delay:${Math.min(j, 12) * 20}ms">
+            <div><div class="t mono">${esc(x.cardNo)}</div><div class="sub">${esc(x.name || 'No name on the card')}</div></div>
+            <div class="sub">${esc(x.tag ? `VillaSafe tag: ${x.tag.label || x.tag.uid}` : x.fromVillaSafe ? 'Written by VillaSafe' : 'Added on the device')}</div>
+            <span class="sub">${esc(x.doors?.length ? `Door ${x.doors.join(', ')}` : 'No door')}</span>
+            <div class="sub">${esc(deviceUntil(x.validUntil))}</div>
+          </li>`).join('');
+      } else {
+        const list = (c.persons || []).filter((p) => has(q, p.name, p.employeeNo, p.cardNos, (p.tags || []).map((x) => x.label)));
+        total = list.length;
+        rows = list.slice(0, LIST_CAP).map((p, j) => {
+          const face = p.faces == null ? '' : p.faces > 0 ? '<span class="st ok">Face</span>' : '<span class="st">No face</span>';
+          const fp = p.fingerprints == null ? '' : p.fingerprints > 0 ? `<span class="st ok">${esc(plural(p.fingerprints, 'fingerprint'))}</span>` : '<span class="st">No fingerprints</span>';
+          const cards = (p.cardNos || []).length ? `${p.cardNos.slice(0, 2).join(', ')}${p.cardNos.length > 2 ? ` +${p.cardNos.length - 2}` : ''}` : 'No card';
+          const tag = (p.tags || [])[0];
+          return `
+          <li style="animation-delay:${Math.min(j, 12) * 20}ms">
+            <div><div class="t">${esc(p.name || 'No name')}</div><div class="sub">No. ${esc(p.employeeNo)} · ${p.fromVillaSafe ? 'From VillaSafe' : 'Added on the device'}</div></div>
+            <div><div class="mono">${esc(cards)}</div>${tag ? `<div class="sub">VillaSafe tag: ${esc(tag.label || tag.uid)}</div>` : ''}</div>
+            ${face || '<span></span>'}
+            ${fp || '<span></span>'}
+            <div class="sub wide">${esc(deviceUntil(p.validUntil))}</div>
+          </li>`;
+        }).join('');
+      }
+      return `
+        <div class="dev" style="animation-delay:${i * 60}ms">
+          <div class="dev-head">
+            <div><div class="dev-name">${esc(c.name)}</div><div class="dev-meta">${esc(meta)}</div></div>
+            <div class="dev-totals">${totals}</div>
+          </div>
+          ${note ? `<p class="dev-note">${esc(note)}</p>` : ''}
+          ${c.truncated ? '<p class="dev-note">This device holds more than the bridge reads at once; the first 5,000 are shown.</p>' : ''}
+          ${total ? `<ul class="rows ${cardsOnly ? 'cards' : 'people'}">${rows}${more(Math.min(total, LIST_CAP), total)}</ul>`
+            : `<p class="page-sub">${q ? 'Nothing on this device matches that.' : cardsOnly ? 'No cards on this device.' : 'Nobody is stored on this device.'}</p>`}
+        </div>`;
+    }
+
+    function renderRegistered() {
+      if (!tagData) return;
+      const q = $('regSearch').value.trim().toLowerCase();
+      const tags = tagData.tags || [];
+      const presence = devData?.presence || {};
+      const problem = (t) => ['missing', 'stale'].includes(presence[t.uid]?.state);
+      const counts = { all: tags.length, ok: tags.filter((t) => t.status === 'ok').length, problem: tags.filter(problem).length };
+      counts.paused = counts.all - counts.ok;
+      const sig = JSON.stringify([q, tagFilter, tagData.savedAt, tags.map((t) => [t.uid, t.status]), devData?.readAt]);
+      if (sig === regSig) return;
+      regSig = sig;
+
+      const ctrls = (devData?.controllers || []).filter((c) => c.ok);
+      const sum = (k) => (ctrls.some((c) => c.totals?.[k] != null) ? ctrls.reduce((s, c) => s + (c.totals?.[k] || 0), 0) : null);
+      const personCount = sum('persons');
+      const cards = sum('cards');
+      const faces = sum('faces');
+      const fps = sum('fingerprints');
+      const withFace = sum('withFace');
+      const withFp = sum('withFingerprint');
+      const stats = [
+        ['Tags on this PC', counts.all, tagData.savedAt ? `Updated ${ago(tagData.savedAt)}` : 'Waiting for VillaSafe'],
+        ['Can open now', counts.ok, counts.paused ? `${counts.paused} paused` : 'None paused'],
+        ['People on devices', devData ? personCount ?? '—' : '—', devData ? `${plural(cards || 0, 'card')} on ${plural(ctrls.length, 'device')}` : 'Read the devices to see'],
+        ['Faces', devData ? faces ?? '—' : '—', !devData ? 'Read the devices to see' : faces == null ? 'Not reported by these devices' : withFace != null ? `${people(withFace)} enrolled` : 'On the devices'],
+        ['Fingerprints', devData ? fps ?? '—' : '—', !devData ? 'Read the devices to see' : fps == null ? 'Not reported by these devices' : withFp != null ? `${people(withFp)} enrolled` : 'On the devices'],
+      ];
+      $('regStats').innerHTML = stats.map(([k, v, s], i) => `
+        <div class="stat" style="animation-delay:${i * 50}ms"><div class="k">${esc(k)}</div><div class="v num">${esc(v)}</div><div class="s">${esc(s)}</div></div>`).join('');
+      $('regReadAt').textContent = devData ? `Devices read ${ago(devData.readAt)}` : 'Devices not read yet';
+
+      $('tagSeg').innerHTML = segHtml([
+        { v: 'all', label: 'All', n: counts.all },
+        { v: 'ok', label: 'Can open', n: counts.ok },
+        { v: 'paused', label: 'Paused', n: counts.paused },
+        ...(devData ? [{ v: 'problem', label: 'Device mismatch', n: counts.problem }] : []),
+      ], tagFilter);
+      const list = tags
+        .filter((t) => tagFilter === 'all' || (tagFilter === 'ok' ? t.status === 'ok' : tagFilter === 'paused' ? t.status !== 'ok' : problem(t)))
+        .filter((t) => has(q, t.label, t.uid, t.cardNo, t.laneName));
+      const shown = list.slice(0, LIST_CAP);
+      $('tagEmpty').hidden = list.length > 0;
+      $('tagEmptyText').textContent = q ? 'No tag matches that.' : tagFilter === 'problem' ? 'Every tag is where it should be on the devices.' : 'Tags enrolled in VillaSafe appear here within a minute.';
+      $('tagRows').innerHTML = shown.map((t, i) => {
+        const [label, tone] = TAG_STATUS[t.status] || [t.status, ''];
+        return `
+        <li style="animation-delay:${Math.min(i, 12) * 20}ms">
+          <div><div class="t">${esc(t.label || 'Unnamed tag')}</div><div class="sub mono">${esc(t.uid)}${t.cardNo && t.cardNo !== t.uid ? ` · card ${esc(t.cardNo)}` : ''}</div></div>
+          <div><div class="sub" style="margin:0">${esc(t.laneName || 'Every lane')}</div><div class="sub">${esc(t.status !== 'ok' && t.reason ? t.reason : t.validUntil ? `Until ${when(t.validUntil)}` : 'No end date')}</div></div>
+          <div class="wide">${presenceHtml(t, presence)}</div>
+          <span class="st ${tone} end">${esc(label)}</span>
+        </li>`;
+      }).join('') + more(shown.length, list.length);
+
+      if (devData) {
+        $('devOut').innerHTML = (devData.controllers || []).length
+          ? devData.controllers.map((c, i) => deviceHtml(c, q, i)).join('')
+          : '<div class="hero-empty"><div><h3>No Hikvision devices</h3><p>None of this bridge\'s lanes has a Hikvision controller or face terminal. Tags are read straight from the reader instead.</p></div></div>';
+      }
+    }
 
     // ---------- Live events from the bridge ----------
     window.bridge.onEvent((evt) => {

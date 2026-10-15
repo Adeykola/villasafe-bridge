@@ -98,6 +98,8 @@ function decodeCard(b) {
     doors,
     begin: b[OFFSET.periodEnable] ? readTime(b, OFFSET.begin) : null,
     end: b[OFFSET.periodEnable] ? readTime(b, OFFSET.end) : null,
+    employeeNo: b.length >= OFFSET.employeeNo + 4 ? b.readUInt32LE(OFFSET.employeeNo) || null : null,
+    name: b.length >= OFFSET.name + 32 ? cstr(b.slice(OFFSET.name, OFFSET.name + 32)) || null : null,
   };
 }
 

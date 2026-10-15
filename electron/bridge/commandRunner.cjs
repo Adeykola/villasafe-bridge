@@ -10,6 +10,7 @@ const signedLog = require('./signedLog.cjs');
 const { callWithFallback, pairWithCode, gatewayHealth, licenceError, BRIDGE_VERSION } = require('./pairing.cjs');
 const os = require('os');
 const lanGate = require('./lanGate.cjs');
+const subscription = require('./subscription.cjs');
 
 let pollTimer = null;
 let probeTimer = null;
@@ -29,6 +30,15 @@ const COOLDOWN_MS = 5000;
 // config file so a restart while offline stays locked; cleared by the next
 // sync VillaSafe accepts.
 let licence = { locked: false, reason: null, message: null };
+// When the estate's VillaSafe subscription runs out (from the last sync, kept
+// on disk). Past it, the gates lock — offline too — until VillaSafe accepts a sync.
+let paidUntil = null;
+
+function enforceSubscription() {
+  if (!subscription.check(paidUntil).locked) return;
+  if (licence.locked && licence.reason === 'unpaid') return;
+  setLicence({ reason: 'unpaid', message: subscription.lockMessage(paidUntil) });
+}
 
 function lockedResult() {
   return { success: false, error: licence.message || 'This PC needs a VillaSafe desktop licence key.' };
@@ -247,6 +257,8 @@ async function runSync(cfg) {
     diagnostics.log(`sync failed: ${e.message}`);
   } finally {
     if (syncRunning.seq === seq) syncRunning = { seq: 0, at: 0 };
+    // Every tick, online or not: a subscription that runs out stops the gates on time.
+    enforceSubscription();
   }
   return true;
 }
@@ -261,7 +273,8 @@ function applyTagChanges({ force = false } = {}) {
   // the controllers — and with no internet, lock every resident out.
   if (!tagStore.savedAt()) return;
   // Cheap when nothing changed: cardBridge skips an unchanged card list.
-  cardBridge.syncApproved(lanes, tagStore.effective(), { force }).catch(() => {});
+  // Cards on the controllers run out with the subscription, so they stop on their own too.
+  cardBridge.syncApproved(lanes, subscription.capTags(tagStore.effective(), paidUntil), { force }).catch(() => {});
 }
 
 async function refreshDeviceHealthInner() {
@@ -392,6 +405,14 @@ async function syncOnce(cfg) {
   const applySyncData = async (data, gatewayUsed) => {
     status.gateway = /villasafe\.com/i.test(gatewayUsed || '') ? 'VillaSafe gateway' : 'Configured gateway';
     if (licence.locked) setLicence(null);
+    // How long the estate has paid VillaSafe for, and VillaSafe's clock.
+    if (data.serverTime) subscription.noteServerTime(data.serverTime);
+    if ('paidUntil' in data && (data.paidUntil || null) !== paidUntil) {
+      paidUntil = data.paidUntil || null;
+      cfg.paidUntil = paidUntil;
+      Store.update({ paidUntil });
+    }
+    enforceSubscription();
     // Honor rotated token
     if (data.rotatedToken) {
       Store.update({ bridgeToken: data.rotatedToken, tokenExpiresAt: data.tokenExpiresAt || cfg.tokenExpiresAt });
@@ -518,6 +539,9 @@ function startBridge(cfg, eventCb) {
   licence = cfg.licenseLock
     ? { locked: true, reason: cfg.licenseLock.reason || 'missing', message: cfg.licenseLock.message || null }
     : { locked: false, reason: null, message: null };
+  paidUntil = cfg.paidUntil || null;
+  subscription.init(cfg, (patch) => Store.update(patch));
+  enforceSubscription();
   // Don't carry the last loop's error into the first heartbeat — after a
   // licence key is accepted it would put "enter the licence key" straight
   // back on the web card.
@@ -568,6 +592,7 @@ function getStatus() {
   return {
     ...status,
     licence,
+    subscription: subscription.check(paidUntil),
     tags: { total: tagStore.tags().length, allowed: tagStore.allowed().length, savedAt: tagStore.savedAt() },
     lan: lanGate.getLanStatus(),
     queuedOffline: offlineQueue.size(),

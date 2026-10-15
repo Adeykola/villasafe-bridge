@@ -98,7 +98,7 @@ async function diagnoseBridgeFailure(originalError) {
   return originalError;
 }
 
-function bridgeRequest(method, path, body) {
+function bridgeRequest(method, path, body, { timeoutMs = 15000 } = {}) {
   return new Promise((resolve, reject) => {
     const data = body ? Buffer.from(JSON.stringify(body)) : null;
     const headers = { 'Accept': 'application/json' };
@@ -108,7 +108,7 @@ function bridgeRequest(method, path, body) {
     }
     if (BRIDGE_TOKEN) headers['X-Bridge-Token'] = BRIDGE_TOKEN;
     const req = http.request(
-      { host: BRIDGE_HOST, port: BRIDGE_PORT, method, path, headers, timeout: 15000 },
+      { host: BRIDGE_HOST, port: BRIDGE_PORT, method, path, headers, timeout: timeoutMs },
       (res) => {
         let chunks = '';
         res.on('data', (c) => (chunks += c));

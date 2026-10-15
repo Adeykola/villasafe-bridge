@@ -22,5 +22,9 @@ contextBridge.exposeInMainWorld('bridge', {
   verifyLog: () => ipcRenderer.invoke('bridge:verifyLog'),
   tailLog: (n) => ipcRenderer.invoke('bridge:tailLog', n),
   publicKey: () => ipcRenderer.invoke('bridge:publicKey'),
+  tags: () => ipcRenderer.invoke('tags:list'),
+  readDevices: () => ipcRenderer.invoke('devices:read'),
+  passes: () => ipcRenderer.invoke('lan:passes'),
+  removePasses: (ids) => ipcRenderer.invoke('lan:removePasses', { ids }),
   onEvent: (cb) => ipcRenderer.on('bridge:event', (_e, evt) => cb(evt)),
 });

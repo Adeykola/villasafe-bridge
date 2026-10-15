@@ -11,6 +11,7 @@ const hikvision = require('./drivers/hikvision.cjs');
 const lanGate = require('./bridge/lanGate.cjs');
 const lanReach = require('./bridge/lanReach.cjs');
 const tagStore = require('./bridge/tagStore.cjs');
+const registry = require('./bridge/registry.cjs');
 const { BRIDGE_VERSION } = require('./bridge/pairing.cjs');
 
 /** Local network API so guard devices can scan and open lanes without internet. */
@@ -233,6 +234,15 @@ ipcMain.handle('hardware:reloadSdk', async () => {
 ipcMain.handle('lan:firewall', (_e, opts) => lanReach.firewallStatus(opts || {}));
 ipcMain.handle('lan:allowPhones', () => lanReach.allowGuardPhones());
 ipcMain.handle('app:version', () => app.getVersion());
+// Registered page: the tags on this PC, and what each Hikvision device holds.
+ipcMain.handle('tags:list', () => ({ tags: registry.tagRows(tagStore.tags(), getLanes()), savedAt: tagStore.savedAt() }));
+ipcMain.handle('devices:read', async () => {
+  try { return { ok: true, ...(await registry.readDevices(getLanes(), tagStore.effective())) }; }
+  catch (e) { return { ok: false, error: e.message }; }
+});
+// Offline page: the guest passes on this PC, and taking finished ones off it.
+ipcMain.handle('lan:passes', () => lanGate.listPasses());
+ipcMain.handle('lan:removePasses', (_e, { ids } = {}) => ({ removed: lanGate.removeFinished(ids) }));
 ipcMain.handle('bridge:status', () => getStatus());
 ipcMain.handle('bridge:runLocal', async (_e, { laneId, action }) => runCommandLocal(laneId, action));
 ipcMain.handle('bridge:runDevice', async (_e, { laneId, deviceIndex, action }) => runDeviceLocal(laneId, deviceIndex, action));

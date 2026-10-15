@@ -364,6 +364,11 @@ function reset(controllerId) {
 
 module.exports = {
   sync, state, reset, addCard, deleteCard,
+  // For reading back what a controller holds (services/deviceRegistry.js).
+  isapi: (session, url, body) => call(session, url, body),
+  firmwareOf: (session, controllerId) => detectFirmware(session, controllerId),
+  sdkListCards: (session) => sdkCardsImpl.listCards(sdkImpl(), session),
+  writtenCards: (controllerId) => new Set((provisioned.get(controllerId) || new Map()).keys()),
   _internal: {
     setIsapi: (fn) => { isapiImpl = fn || sdkIsapi; },
     setSdkCards: (impl, sdk) => { sdkCardsImpl = impl || sdkCards; sdkImpl = sdk ? () => sdk : () => sdkLoader.load(); },

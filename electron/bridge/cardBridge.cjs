@@ -245,5 +245,5 @@ async function armControllers(lanes) {
 
 module.exports = {
   syncApproved, drainCardEvents, armControllers, pushApprovedTags, provisionControllers,
-  learnCardNumber, controllerCardNo,
+  learnCardNumber, controllerCardNo, controllersOf, desiredCards,
 };

@@ -11,6 +11,12 @@
 //   POST /v1/open  { laneId, side } → manual open by a signed-in guard
 //   GET  /v1/lanes                  → lanes guards can pick
 //
+// Passes that are finished (used once and left, expired, revoked) can be
+// removed from the PC, and clear themselves AUTO_CLEAR_HOURS after they
+// finish. A removed pass is remembered so the next sync doesn't bring it back
+// (unless VillaSafe makes it usable again, e.g. extends it), and a scan of it
+// still says why it can't be used.
+//
 // Every call except /health needs "Authorization: Bearer <token>" issued by the
 // gate-lan-credentials function and signed with this bridge's LAN key.
 const http = require('http');
@@ -24,8 +30,11 @@ const lanReach = require('./lanReach.cjs');
 const DIR = path.join(os.homedir(), '.villasafe-gate-bridge');
 const PASSES_FILE = path.join(DIR, 'passes.json');
 const SCANS_FILE = path.join(DIR, 'lan-scans.json');
-const PORT = lanReach.PORT;
+// Tests run beside a real bridge on the same PC, so they can pick another port.
+const PORT = Number(process.env.VILLASAFE_LAN_PORT) || lanReach.PORT;
 const REFRESH_MS = 60_000;
+const AUTO_CLEAR_HOURS = 12;
+const REMOVED_LIMIT = 5000;
 
 let state = {
   tenantId: null,
@@ -34,6 +43,7 @@ let state = {
   passesAt: null,
   offlineMaxHours: 24,
   passes: new Map(), // code_hash -> pass
+  removed: new Map(), // code_hash -> { id, name, reason, at }: finished passes taken off this PC
 };
 let lastRequestAt = 0;
 let pendingScans = [];
@@ -57,6 +67,7 @@ function persistPasses() {
       passesAt: state.passesAt,
       offlineMaxHours: state.offlineMaxHours,
       passes: [...state.passes.values()],
+      removed: [...state.removed.entries()],
     }));
   } catch (e) { diagnostics.log(`LAN: could not save passes: ${e.message}`); }
 }
@@ -77,6 +88,7 @@ function load(cfg) {
         passesAt: saved.passesAt,
         offlineMaxHours: saved.offlineMaxHours || 24,
         passes: new Map((saved.passes || []).map((p) => [p.code_hash, p])),
+        removed: new Map(Array.isArray(saved.removed) ? saved.removed : []),
       };
     }
   } catch {}
@@ -101,6 +113,103 @@ function hashCode(tenantId, code) {
 
 const isInside = (p) => p.status === 'checked-in' || (!!p.check_in_time && !p.check_out_time);
 const expiryOf = (p) => new Date(p.extended_until || p.valid_until).getTime();
+
+/** Why a pass can't be used any more, or null while it can (or the guest is inside). */
+function finishedReason(p, at = Date.now()) {
+  if (isInside(p)) return null;
+  if (p.is_revoked) return 'revoked';
+  if (expiryOf(p) < at) return 'expired';
+  if (p.status === 'checked-out' && p.access_type !== 'recurring') return 'used';
+  return null;
+}
+
+/** Where a pass is up to: inside, ready, upcoming, or finished (used, expired, revoked). */
+function statusOf(p, at = Date.now()) {
+  if (isInside(p)) return 'inside';
+  const finished = finishedReason(p, at);
+  if (finished) return finished;
+  return new Date(p.valid_from).getTime() > at ? 'upcoming' : 'ready';
+}
+
+/** When a finished pass finished, for clearing it later. Revoked: when it would have run out. */
+function finishedAt(p, reason) {
+  if (reason === 'used') return new Date(p.check_out_time || 0).getTime() || Date.now();
+  return expiryOf(p);
+}
+
+function forget(hash, p, reason, at) {
+  state.passes.delete(hash);
+  state.removed.delete(hash); // re-insert as newest
+  state.removed.set(hash, { id: p.id, name: p.name, reason, at: new Date(at).toISOString() });
+  while (state.removed.size > REMOVED_LIMIT) state.removed.delete(state.removed.keys().next().value);
+}
+
+/** Take finished passes off the PC once they've been finished for AUTO_CLEAR_HOURS. */
+function autoClear(at = Date.now()) {
+  let cleared = 0;
+  for (const [hash, p] of state.passes) {
+    const reason = finishedReason(p, at);
+    if (reason && at - finishedAt(p, reason) > AUTO_CLEAR_HOURS * 3600_000) {
+      forget(hash, p, reason, at);
+      cleared++;
+    }
+  }
+  return cleared;
+}
+
+/**
+ * Remove finished passes now: the ones given (by pass id), or all of them.
+ * Passes that can still be used, and guests inside, are never removed.
+ */
+function removeFinished(ids, at = Date.now()) {
+  const only = Array.isArray(ids) && ids.length ? new Set(ids) : null;
+  let removed = 0;
+  for (const [hash, p] of state.passes) {
+    if (only && !only.has(p.id)) continue;
+    const reason = finishedReason(p, at);
+    if (!reason) continue;
+    forget(hash, p, reason, at);
+    removed++;
+  }
+  if (removed) {
+    persistPasses();
+    diagnostics.log(`LAN: removed ${removed} finished pass${removed === 1 ? '' : 'es'} from this PC`);
+  }
+  return removed;
+}
+
+const REMOVED_DECISION = {
+  used: (r) => ({ action: 'deny', title: 'Already Used', reason: `${r.name}'s pass has been used and was removed from this PC` }),
+  expired: () => ({ action: 'deny', title: 'Expired Code', reason: 'This guest code has expired' }),
+  revoked: () => ({ action: 'deny', title: 'Code Revoked', reason: 'This guest code has been revoked' }),
+};
+
+/** The passes on this PC for the bridge window, with where each is up to. */
+function listPasses(at = Date.now()) {
+  if (autoClear(at)) persistPasses();
+  const order = { inside: 0, ready: 1, upcoming: 2, used: 3, expired: 4, revoked: 5 };
+  const counts = { inside: 0, ready: 0, upcoming: 0, used: 0, expired: 0, revoked: 0 };
+  const passes = [...state.passes.values()].map((p) => {
+    const status = statusOf(p, at);
+    counts[status]++;
+    return {
+      id: p.id,
+      name: p.name,
+      purpose: p.purpose || null,
+      code_hint: p.code_hint || null,
+      status,
+      access_type: p.access_type || null,
+      valid_from: p.valid_from,
+      valid_until: p.extended_until || p.valid_until,
+      check_in_time: p.check_in_time || null,
+      check_out_time: p.check_out_time || null,
+      lanes: (p.allowed_lane_ids || []).length,
+    };
+  });
+  passes.sort((a, b) => order[a.status] - order[b.status]
+    || (a.status === 'used' ? String(b.check_out_time).localeCompare(String(a.check_out_time)) : String(a.valid_until).localeCompare(String(b.valid_until))));
+  return { passes, counts, removed: state.removed.size, autoClearHours: AUTO_CLEAR_HOURS, passesAt: state.passesAt };
+}
 
 function decide(pass, lane, at = Date.now()) {
   const inside = isInside(pass);
@@ -176,7 +285,17 @@ function updateFromSync(data, cfg) {
     if (ev.kind === 'guest-check-in') Object.assign(hit, { status: 'checked-in', check_in_time: ev.at });
     else Object.assign(hit, { status: 'checked-out', check_out_time: ev.at });
   }
+  // Passes taken off this PC stay off while they're still finished; one that
+  // VillaSafe makes usable again comes back. Removals VillaSafe no longer
+  // sends are forgotten.
+  for (const hash of [...state.removed.keys()]) {
+    const p = next.get(hash);
+    if (!p) state.removed.delete(hash);
+    else if (finishedReason(p)) next.delete(hash);
+    else state.removed.delete(hash);
+  }
   state.passes = next;
+  autoClear();
   persistPasses();
 }
 
@@ -280,6 +399,13 @@ function start(cfg, { getLanes, openLane, isOnline, isLicensed = () => true, onE
         ? [...state.passes.values()].find((p) => p.id === body.guestId)
         : state.passes.get(hashCode(state.tenantId, code));
       if (!pass) {
+        // Taken off this PC once it was finished: still say why it can't be used.
+        const gone = body.guestId
+          ? [...state.removed.values()].find((r) => r.id === body.guestId)
+          : state.removed.get(hashCode(state.tenantId, code));
+        if (gone) {
+          return send(res, 200, { decision: REMOVED_DECISION[gone.reason]?.(gone) || REMOVED_DECISION.used(gone), stale: isStale(), ms: Date.now() - t0 });
+        }
         return send(res, 200, { decision: { action: 'deny', title: 'Invalid Code', reason: 'No guest pass with this code' }, stale: isStale(), ms: Date.now() - t0 });
       }
       const decision = decide(pass, lane);
@@ -337,11 +463,19 @@ function stop() {
 }
 
 function getLanStatus() {
-  return { port: PORT, addresses: lanReach.lanAddresses(), passes: state.passes.size, passesAt: state.passesAt, stale: isStale(), pendingScans: pendingScans.length, hasKey: !!state.lanSecret };
+  const { counts } = listPasses();
+  return {
+    port: PORT, addresses: lanReach.lanAddresses(), passes: state.passes.size, passesAt: state.passesAt, stale: isStale(), pendingScans: pendingScans.length, hasKey: !!state.lanSecret,
+    // Passes a guest can still use (or is inside on), and finished ones still on the PC.
+    usable: counts.ready + counts.upcoming + counts.inside,
+    inside: counts.inside,
+    finished: counts.used + counts.expired + counts.revoked,
+  };
 }
 
 module.exports = {
   start, stop, needsPasses, updateFromSync, drainScans, requeueScans, announcement, getLanStatus,
+  listPasses, removeFinished,
   // exported for tests
-  _internal: { decide, hashCode, normalizeCode, verifyToken, setState: (s) => Object.assign(state, s) },
+  _internal: { decide, statusOf, finishedReason, autoClear, hashCode, normalizeCode, verifyToken, setState: (s) => Object.assign(state, s), AUTO_CLEAR_HOURS },
 };
