@@ -70,7 +70,7 @@ In the S4A **RFID Reader Demo** tool, Basic Parameters (the values that work on 
 | --- | --- |
 | Output Mode | **WG26** |
 | Work Mode | Active |
-| Same ID interval | 6–10 |
+| Same ID interval | **30** |
 | Memory Block | **TID** |
 | Start Address / Data Length | **0 / 6** |
 | Byte Offset | **11** |
@@ -79,6 +79,13 @@ In the S4A **RFID Reader Demo** tool, Basic Parameters (the values that work on 
 | Buzzer | Output only |
 
 Press **Set**, then **Reboot Reader**, then **Get** to confirm the settings stuck.
+
+**Same ID interval** is how long the reader waits before sending the same tag
+again. The controller opens the door by itself for every send of a card it
+holds, so a short interval (6–10) re-raised the boom while the car was still
+driving through. 30 lets the boom close behind the car. The bridge also
+ignores a tag that has just opened the lane for 30 seconds (or the lane's open
+time plus 20), and keeps one auto-close per lane, timed from the last open.
 
 Wiegand-26 carries only 3 bytes of the tag's EPC, and **Byte Offset** picks
 which 3. The S4A counts from the 2-byte PC word in front of the EPC, so

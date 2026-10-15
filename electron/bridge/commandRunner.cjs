@@ -40,6 +40,18 @@ function enforceSubscription() {
   setLicence({ reason: 'unpaid', message: subscription.lockMessage(paidUntil) });
 }
 
+// One auto-close per lane, after its last open. A timer per open meant an
+// earlier one dropped the boom just after a later read had raised it again.
+const autoCloseTimers = new Map(); // laneId -> timeout
+
+// A long-range reader keeps seeing a car's tag the whole time it drives
+// through (and a little after), sending it again every few seconds. Once a tag
+// has opened a lane, more reads of it there don't open it again for this long,
+// so the boom closes behind the car instead of going back up.
+const PASSING_MIN_MS = 30_000;
+const passingMs = (lane) => Math.max(PASSING_MIN_MS, ((Number(lane?.default_open_seconds) || 0) + 20) * 1000);
+const openedByTag = new Map(); // `${laneId}:${tagUid}` -> when it opened the lane
+
 function lockedResult() {
   return { success: false, error: licence.message || 'This PC needs a VillaSafe desktop licence key.' };
 }
@@ -50,6 +62,8 @@ async function executeLane(lane, action, commandId, opts = {}) {
   const evtBase = { laneId: lane.id, commandId, action, side };
   diagnostics.log(`exec ${action} on lane ${lane.name}`);
   try {
+    // Closing by hand (or locking down) cancels a pending auto-close.
+    if (action !== 'open') { clearTimeout(autoCloseTimers.get(lane.id)); autoCloseTimers.delete(lane.id); }
     if (action === 'lockdown') {
       for (const d of lane.devices) { try { await runDriver(d, 'close'); } catch {} }
       recordEvent({ ...evtBase, success: true, source: 'lockdown' });
@@ -65,12 +79,14 @@ async function executeLane(lane, action, commandId, opts = {}) {
     }
     recordEvent({ ...evtBase, success: true });
     if (action === 'open' && lane.default_open_seconds) {
-      setTimeout(async () => {
+      clearTimeout(autoCloseTimers.get(lane.id));
+      autoCloseTimers.set(lane.id, setTimeout(async () => {
+        autoCloseTimers.delete(lane.id);
         for (const d of [...lane.devices].reverse()) {
           try { await runDriver(d, 'close', { side }); } catch {}
         }
         recordEvent({ ...evtBase, action: 'auto-close', success: true });
-      }, lane.default_open_seconds * 1000);
+      }, lane.default_open_seconds * 1000));
     }
     return { success: true };
   } catch (e) {
@@ -219,8 +235,17 @@ async function handleTagRead({ lane = null, laneId = lane?.id || null, tagUid, v
     return true;
   }
   if (open && lane) {
+    // The same car still driving through: leave the boom to close behind it.
+    const key = `${lane.id}:${enrolled}`;
+    const now = Date.now();
+    if (now - (openedByTag.get(key) || 0) < passingMs(lane)) return true;
+    openedByTag.set(key, now);
+    if (openedByTag.size > 2000) {
+      for (const [k, at] of openedByTag) if (now - at > PASSING_MIN_MS * 4) openedByTag.delete(k);
+    }
     read.logged = false;
-    await executeLane(lane, 'open', null, { side });
+    const r = await executeLane(lane, 'open', null, { side });
+    if (!r.success) openedByTag.delete(key); // it didn't open: the next read may try again
   } else {
     recordEvent({ laneId, action: 'rfid_read', source: 'rfid', success: true, details });
   }
@@ -590,6 +615,9 @@ function startBridge(cfg, eventCb) {
 }
 
 function stopBridge() {
+  for (const t of autoCloseTimers.values()) clearTimeout(t);
+  autoCloseTimers.clear();
+  openedByTag.clear();
   if (pollTimer) clearInterval(pollTimer);
   pollTimer = null;
   if (cardPollTimer) clearInterval(cardPollTimer);

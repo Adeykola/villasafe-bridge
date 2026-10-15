@@ -44,6 +44,15 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.11** — The boom closes behind a car whose tag is still being read.
+  A long-range reader keeps sending a car's tag while it drives through; the
+  bridge opened the lane again for every send more than 4 seconds apart, and
+  each open started its own auto-close timer, so an earlier timer dropped the
+  boom just after a later read had raised it. Now a tag that has opened a
+  lane is left alone there for 30 seconds (or the lane's open time plus 20),
+  and each lane has one auto-close, timed from its last open (closing by hand
+  cancels it). Set the S4A's Same ID interval to 30 as well: the controller
+  opens by itself for every send of a card it holds.
 - **v1.2.10** — Wiegand-26 tag numbers match the tag. A Hikvision controller
   reports a Wiegand-26 card as 3 digits of facility code and 5 of card
   number (`02159509` = facility 21, card 59509); the bridge read that as one
