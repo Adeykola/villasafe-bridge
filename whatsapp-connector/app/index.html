@@ -7,31 +7,39 @@
   <style>
     :root { --bg: #060a14; --card: #0d1424; --line: #1c2740; --text: #eef2fb; --muted: #8a97b4; --green: #22c55e; --amber: #f59e0b; --red: #f43f5e; --primary: #4f7cff; }
     * { box-sizing: border-box; }
-    body { margin: 0; font: 15px/1.5 "Segoe UI", system-ui, sans-serif; background: radial-gradient(circle at 85% -10%, rgba(79,124,255,.22), transparent 55%), var(--bg); color: var(--text); min-height: 100vh; }
-    main { padding: 28px 26px 22px; max-width: 560px; margin: 0 auto; }
+    body { margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; background: radial-gradient(circle at 85% -10%, rgba(79,124,255,.22), transparent 55%), var(--bg); color: var(--text); min-height: 100vh; }
+    main { padding: 28px 26px 22px; max-width: 600px; margin: 0 auto; }
     .brand { display: flex; align-items: center; gap: 12px; }
     .mark { width: 42px; height: 42px; border-radius: 14px; background: linear-gradient(135deg, #22c55e, #128c4a); display: grid; place-items: center; box-shadow: 0 10px 30px rgba(34,197,94,.25); }
     .mark svg { width: 22px; height: 22px; }
     .eyebrow { font-size: 11px; letter-spacing: .16em; text-transform: uppercase; color: var(--muted); font-weight: 600; }
     h1 { font-size: clamp(26px, 6vw, 34px); line-height: 1.05; margin: 18px 0 6px; font-weight: 800; letter-spacing: -.02em; }
     .pill { display: inline-flex; align-items: center; gap: 8px; border-radius: 999px; padding: 6px 12px; font-size: 13px; font-weight: 600; background: rgba(255,255,255,.06); }
-    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); position: relative; }
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--muted); position: relative; flex-shrink: 0; }
     .dot.live::after { content: ""; position: absolute; inset: 0; border-radius: 50%; background: inherit; animation: ping 1.6s cubic-bezier(0.16,1,0.3,1) infinite; }
     @keyframes ping { from { transform: scale(1); opacity: .7; } to { transform: scale(2.6); opacity: 0; } }
-    .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 20px; margin-top: 18px; animation: rise .5s cubic-bezier(0.16,1,0.3,1) both; }
+    .card { background: var(--card); border: 1px solid var(--line); border-radius: 22px; padding: 18px 20px; margin-top: 14px; animation: rise .5s cubic-bezier(0.16,1,0.3,1) both; }
     @keyframes rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
-    .qr { background: #fff; border-radius: 16px; padding: 10px; width: 240px; height: 240px; margin: 4px auto 16px; display: grid; place-items: center; }
+    .head { display: flex; align-items: center; gap: 10px; }
+    .head .who { flex: 1; min-width: 0; }
+    .who .title { font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .who .sub { font-size: 13px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+    .qr { background: #fff; border-radius: 16px; padding: 10px; width: 240px; height: 240px; margin: 14px auto; display: grid; place-items: center; }
     .qr img { width: 220px; height: 220px; image-rendering: pixelated; }
     ol { margin: 0; padding-left: 20px; color: #c9d3ea; }
     li { margin: 4px 0; }
     p { margin: 6px 0; color: #c9d3ea; }
     .muted { color: var(--muted); font-size: 13px; }
-    textarea { width: 100%; min-height: 84px; resize: vertical; border-radius: 14px; border: 1px solid var(--line); background: #0a1020; color: var(--text); padding: 12px; font: 13px/1.4 Consolas, monospace; }
+    textarea { width: 100%; min-height: 84px; resize: vertical; border-radius: 14px; border: 1px solid var(--line); background: #0a1020; color: var(--text); padding: 12px; font: 13px/1.4 ui-monospace, Menlo, Consolas, monospace; }
     textarea:focus { outline: 2px solid var(--primary); outline-offset: 1px; }
-    button { border: 0; border-radius: 12px; padding: 10px 16px; font: 600 14px "Segoe UI", system-ui; cursor: pointer; color: #fff; background: var(--primary); transition: transform .15s cubic-bezier(0.16,1,0.3,1), opacity .15s; }
+    button { border: 0; border-radius: 12px; padding: 10px 16px; font: 600 14px -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif; cursor: pointer; color: #fff; background: var(--primary); transition: transform .15s cubic-bezier(0.16,1,0.3,1), opacity .15s; }
     button:hover { transform: translateY(-1px); }
     button:disabled { opacity: .55; cursor: default; transform: none; }
     button.ghost { background: rgba(255,255,255,.07); color: var(--text); }
+    button.small { padding: 6px 10px; font-size: 12px; border-radius: 10px; }
+    button.danger:hover { background: rgba(244,63,94,.2); color: #fecdd3; }
+    button.add { width: 100%; margin-top: 14px; background: transparent; border: 1px dashed var(--line); color: var(--text); padding: 14px; }
+    button.add:hover { border-color: var(--primary); }
     .row { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
     .error { color: #fda4af; font-size: 13px; margin-top: 8px; min-height: 18px; }
     footer { margin-top: 18px; display: flex; justify-content: space-between; align-items: center; gap: 10px; flex-wrap: wrap; }
@@ -59,32 +67,19 @@
     <div class="row"><button id="saveKey">Connect</button></div>
   </section>
 
-  <section id="qrBox" class="card" hidden>
-    <div class="qr"><img id="qrImg" alt="QR code to link WhatsApp" /></div>
-    <ol>
-      <li>Open WhatsApp on the VillaSafe phone</li>
-      <li>Tap <b>Settings</b> (or ⋮) → <b>Linked devices</b></li>
-      <li>Tap <b>Link a device</b> and point the phone at this code</li>
-    </ol>
-    <p class="muted">The same code shows in VillaSafe’s inbox. It refreshes every 20 seconds or so.</p>
-  </section>
+  <div id="links"></div>
 
-  <section id="linked" class="card" hidden>
-    <p class="big" id="linkedTo">Linked</p>
-    <p>Messages to this number arrive in VillaSafe’s inbox, and replies sent there go out from it.</p>
-    <p class="muted">You can close this window: the connector keeps running in the background (tray icon), starts with Windows, and reconnects by itself after sleep or an internet drop.</p>
-  </section>
-
-  <section id="working" class="card" hidden>
-    <p id="workingText">Connecting to WhatsApp…</p>
-    <p class="muted" id="workingDetail">If the internet is down it keeps trying, and connects as soon as it’s back.</p>
+  <section id="addBox" hidden>
+    <button class="add" id="add">+ Link another WhatsApp number</button>
+    <p class="muted" id="addHelp">Each number is its own connection. You can also link a number that’s already linked on another computer: the two keep each other going, so the inbox still works when one computer is off.</p>
+    <div class="error" id="addError"></div>
   </section>
 
   <footer>
     <span class="muted" id="autostart"></span>
     <div class="row" style="margin:0">
       <button class="ghost" id="changeKey">Change setup key</button>
-      <button class="ghost" id="restart">Restart</button>
+      <button class="ghost" id="restart">Restart all</button>
       <button class="ghost" id="openLog">Logs</button>
     </div>
   </footer>
@@ -92,37 +87,97 @@
 <script>
   const $ = (id) => document.getElementById(id);
   let forceSetup = false;
+  let last = { links: [] };
 
-  function render(s) {
-    const status = forceSetup || !s.configured && s.status === 'setup' ? 'setup' : s.status;
-    const titles = {
-      setup: 'Set up once',
-      starting: 'Connecting…',
-      restarting: 'Restarting…',
-      qr: 'Link WhatsApp',
-      connected: 'WhatsApp is linked',
-      logged_out: 'Link WhatsApp again',
-      offline: 'Stopped',
-    };
-    $('title').textContent = titles[status] || 'Connecting…';
-    $('label').textContent = s.label || status;
-    const tone = status === 'connected' ? 'var(--green)' : status === 'qr' || status === 'logged_out' ? 'var(--amber)' : status === 'setup' ? 'var(--primary)' : 'var(--muted)';
-    $('dot').style.background = tone;
-    $('dot').classList.toggle('live', status === 'connected');
-    $('setup').hidden = status !== 'setup';
-    $('qrBox').hidden = !(status === 'qr' && s.qrImage);
-    if (s.qrImage) $('qrImg').src = s.qrImage;
-    $('linked').hidden = status !== 'connected';
-    $('linkedTo').textContent = s.phone ? `Linked to +${s.phone}${s.name ? ' · ' + s.name : ''}` : 'Linked';
-    $('working').hidden = !['starting', 'restarting', 'offline', 'logged_out'].includes(status) && !(status === 'qr' && !s.qrImage);
-    $('workingText').textContent = status === 'restarting' ? 'Restarting the connection…' : status === 'logged_out' ? 'The phone unlinked this connector — a new code is on its way.' : 'Connecting to WhatsApp…';
-    $('workingDetail').textContent = s.detail || 'If the internet is down it keeps trying, and connects as soon as it’s back.';
-    $('changeKey').hidden = status === 'setup' && !s.configured;
+  /** A new element with its text (never HTML) and attributes. */
+  function el(tag, attrs = {}, ...children) {
+    const node = document.createElement(tag);
+    for (const [k, v] of Object.entries(attrs)) {
+      if (k === 'class') node.className = v;
+      else if (k === 'text') node.textContent = v;
+      else if (k.startsWith('on')) node.addEventListener(k.slice(2), v);
+      else node.setAttribute(k, v);
+    }
+    for (const c of children) if (c) node.append(c);
+    return node;
   }
 
-  let last = {};
+  const toneOf = (status) =>
+    status === 'connected' ? 'var(--green)' : status === 'qr' || status === 'logged_out' ? 'var(--amber)' : status === 'removing' ? 'var(--red)' : 'var(--muted)';
+
+  function linkCard(l, n, many) {
+    const dot = el('span', { class: 'dot' + (l.status === 'connected' ? ' live' : '') });
+    dot.style.background = toneOf(l.status);
+    const title = l.status === 'connected' && l.phone ? `+${l.phone}` : many ? `Number ${n + 1}` : 'WhatsApp';
+    const sub = l.status === 'connected' ? (l.name ? `${l.name} · linked` : 'Linked') : l.label;
+    const busy = l.status === 'removing';
+    const card = el('section', { class: 'card' },
+      el('div', { class: 'head' },
+        dot,
+        el('div', { class: 'who' }, el('div', { class: 'title', text: title }), el('div', { class: 'sub', text: sub })),
+        el('button', { class: 'ghost small', text: 'Restart', onclick: () => window.connector.restart(l.id), ...(busy ? { disabled: '' } : {}) }),
+        el('button', { class: 'ghost small danger', text: 'Unlink', onclick: () => remove(l.id), ...(busy ? { disabled: '' } : {}) }),
+      ),
+    );
+    if (l.status === 'qr' && l.qrImage) {
+      card.append(
+        el('div', { class: 'qr' }, el('img', { src: l.qrImage, alt: 'QR code to link WhatsApp' })),
+        el('ol', {},
+          el('li', { text: 'Open WhatsApp on the phone with the number to link' }),
+          el('li', {}, 'Tap ', el('b', { text: 'Settings' }), ' (or ⋮) → ', el('b', { text: 'Linked devices' })),
+          el('li', {}, 'Tap ', el('b', { text: 'Link a device' }), ' and point the phone at this code'),
+        ),
+        el('p', { class: 'muted', text: 'A new number joins the inbox as its own line. A number already linked elsewhere makes this computer its backup. The same code shows in VillaSafe’s inbox and refreshes every 20 seconds or so.' }),
+      );
+    } else if (l.status !== 'connected') {
+      const text = {
+        restarting: 'Restarting the connection…',
+        logged_out: 'The phone unlinked this connection — a new code is on its way.',
+        removing: 'Unlinking from the phone…',
+      }[l.status] || 'Connecting to WhatsApp…';
+      card.append(el('p', { text }), el('p', { class: 'muted', text: l.detail || 'If the internet is down it keeps trying, and connects as soon as it’s back.' }));
+    }
+    return card;
+  }
+
+  function render(s) {
+    const setup = forceSetup || s.setupNeeded;
+    const links = s.links || [];
+    const linked = links.filter((l) => l.status === 'connected').length;
+    const waiting = links.some((l) => l.status === 'qr' || l.status === 'logged_out');
+    $('title').textContent = setup
+      ? 'Set up once'
+      : !links.length
+        ? 'Link a number'
+        : waiting
+          ? 'Link WhatsApp'
+          : linked === links.length
+            ? linked > 1 ? `${linked} numbers linked` : 'WhatsApp is linked'
+            : 'Connecting…';
+    $('label').textContent = setup
+      ? 'Needs its setup key'
+      : !links.length
+        ? 'No numbers on this computer'
+        : `${linked} of ${links.length} linked${s.device ? ` · ${s.device}` : ''}`;
+    $('dot').style.background = setup ? 'var(--primary)' : linked && linked === links.length ? 'var(--green)' : waiting ? 'var(--amber)' : 'var(--muted)';
+    $('dot').classList.toggle('live', !setup && linked > 0 && linked === links.length);
+    $('setup').hidden = !setup;
+    $('changeKey').hidden = setup && !s.configured;
+
+    const box = $('links');
+    box.replaceChildren(...(setup ? [] : links.map((l, n) => linkCard(l, n, links.length > 1))));
+    $('addBox').hidden = setup || !s.configured;
+    $('add').disabled = links.length >= (s.maxLinks || 6);
+    $('add').textContent = links.length ? '+ Link another WhatsApp number' : '+ Link a WhatsApp number';
+  }
+
   async function refresh() { last = await window.connector.get(); render(last); }
-  window.connector.onState((s) => { last = { ...last, ...s }; render(last); });
+  window.connector.onState((s) => { last = s; render(last); });
+
+  async function remove(id) {
+    await window.connector.remove(id);
+    refresh();
+  }
 
   $('saveKey').addEventListener('click', async () => {
     $('saveKey').disabled = true;
@@ -134,12 +189,19 @@
     $('key').value = '';
     refresh();
   });
+  $('add').addEventListener('click', async () => {
+    $('addError').textContent = '';
+    const r = await window.connector.add();
+    if (!r.ok) $('addError').textContent = r.error;
+    refresh();
+  });
   $('changeKey').addEventListener('click', () => { forceSetup = true; render(last); $('key').focus(); });
   $('restart').addEventListener('click', () => window.connector.restart());
   $('openLog').addEventListener('click', () => window.connector.openLog());
 
   refresh().then(() => {
-    $('autostart').textContent = last.startsWithWindows ? 'Starts with Windows · runs in the background' : '';
+    const where = last.platform === 'macos' ? 'Starts when you sign in to this Mac · runs in the menu bar' : 'Starts with Windows · runs in the background';
+    $('autostart').textContent = last.startsAtLogin ? where : '';
   });
 </script>
 </body>

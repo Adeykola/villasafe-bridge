@@ -2,3 +2,4 @@ node_modules/
 auth/
 .env
 release/
+auth.id

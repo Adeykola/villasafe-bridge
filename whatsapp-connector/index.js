@@ -1,21 +1,33 @@
-// VillaSafe WhatsApp companion: keeps VillaSafe's WhatsApp number linked the
-// way WhatsApp Web / Desktop does (scan a QR code once), and relays messages
-// between WhatsApp and the communications inbox.
+// VillaSafe WhatsApp companion: keeps one of VillaSafe's WhatsApp numbers
+// linked the way WhatsApp Web / Desktop does (scan a QR code once), and relays
+// messages between WhatsApp and the communications inbox.
+//
+// One running copy is one connection: one number on one computer. Run more
+// copies (each with its own AUTH_DIR) to link more numbers, or link the same
+// number on another computer as a backup. Each copy has its own id
+// (CONNECTOR_ID, or one made up and kept next to AUTH_DIR) so VillaSafe can
+// tell them apart, and only takes replies for chats on its own number.
 //
 // It talks only to the whatsapp-connector edge function, with a shared secret.
 // It never holds database keys. Its own login lives in AUTH_DIR; keep that
 // folder on persistent storage or you'll have to scan the QR again.
 //
 // Runs on its own (npm start, Docker) or inside the VillaSafe WhatsApp
-// Connector desktop app (app/main.cjs), which starts it with Windows, restarts
-// it if it stops, and shows the QR code it reports over IPC.
+// Connector desktop app for Windows and macOS (app/main.cjs), which starts one
+// copy per number, restarts them if they stop, and shows the QR codes they
+// report over IPC.
 
 import 'dotenv/config';
+import { randomBytes } from 'node:crypto';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { rm } from 'node:fs/promises';
+import { hostname } from 'node:os';
+import { dirname, resolve } from 'node:path';
 import makeWASocket, {
   Browsers,
   DisconnectReason,
   fetchLatestBaileysVersion,
+  generateMessageIDV2,
   isJidBroadcast,
   isJidGroup,
   isJidNewsletter,
@@ -35,17 +47,49 @@ if (!API || !SECRET) {
   process.exit(1);
 }
 
+/** This connection's id: given, or made up once and kept beside the login (which a logout deletes). */
+function connectorId() {
+  const given = String(process.env.CONNECTOR_ID || '').trim();
+  if (/^[A-Za-z0-9_-]{4,64}$/.test(given)) return given;
+  const file = process.env.CONNECTOR_ID_FILE || `${resolve(AUTH_DIR)}.id`;
+  try {
+    const saved = readFileSync(file, 'utf8').trim();
+    if (/^[A-Za-z0-9_-]{4,64}$/.test(saved)) return saved;
+  } catch { /* first run */ }
+  const made = `wa-${randomBytes(9).toString('base64url')}`;
+  try {
+    mkdirSync(dirname(file), { recursive: true });
+    writeFileSync(file, made);
+  } catch { /* read-only: a new id each start, which still works */ }
+  return made;
+}
+
+const CONNECTOR_ID = connectorId();
+// The computer it runs on, as the inbox shows it: "Office-MacBook.local" → "Office MacBook".
+const DEVICE_LABEL = (process.env.DEVICE_LABEL || hostname().replace(/\.(local|lan|home)$/i, '').replace(/[-_]+/g, ' ')).trim().slice(0, 80) || 'Computer';
+const APP_VERSION = process.env.APP_VERSION || (() => {
+  try {
+    return JSON.parse(readFileSync(new URL('./package.json', import.meta.url), 'utf8')).version;
+  } catch {
+    return null;
+  }
+})();
+const PLATFORM = process.env.CONNECTOR_PLATFORM || { darwin: 'macos', win32: 'windows', linux: 'linux' }[process.platform] || process.platform;
+
 const log = pino({ level: process.env.LOG_LEVEL || 'info' });
 
 // With Wi-Fi up but no internet a request can hang for minutes; give up in time.
 const REQUEST_TIMEOUT_MS = 20_000;
 
-/** POST an action to the whatsapp-connector edge function. */
+/** Our own number once linked, so VillaSafe routes the right replies to this connection. */
+let ownPhone = null;
+
+/** POST an action to the whatsapp-connector edge function, saying which connection this is. */
 async function call(action, payload = {}) {
   const res = await fetch(API, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-connector-secret': SECRET },
-    body: JSON.stringify({ action, ...payload }),
+    body: JSON.stringify({ action, connector_id: CONNECTOR_ID, own_phone: ownPhone, ...payload }),
     signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
   });
   const body = await res.json().catch(() => ({}));
@@ -55,12 +99,15 @@ async function call(action, payload = {}) {
 
 // The last state reported, repeated by the heartbeat (so a QR stays visible).
 let current = { status: 'starting', extra: {} };
+// Removed from the desktop app: VillaSafe has forgotten this connection, so say nothing more.
+let forgotten = false;
 
 const report = (status, extra = {}) => {
   current = { status, extra };
   // The desktop app shows it too (the QR code even before VillaSafe is reachable).
   try { process.send?.({ type: 'state', status, ...extra }); } catch { /* no parent */ }
-  return call('state', { status, ...extra }).catch((e) => {
+  if (forgotten) return Promise.resolve({});
+  return call('state', { status, device_label: DEVICE_LABEL, platform: PLATFORM, app_version: APP_VERSION, ...extra }).catch((e) => {
     log.warn({ err: e.message }, 'could not report state');
     return {};
   });
@@ -142,16 +189,18 @@ async function start() {
       await report('qr', { qr });
     }
     if (connection === 'open') {
-      connected = true;
       const id = sock.user?.id || '';
+      ownPhone = id.split(':')[0].split('@')[0] || null;
+      connected = true;
       log.info({ id }, 'WhatsApp linked');
-      await report('connected', { phone: id.split(':')[0].split('@')[0], display_name: sock.user?.name || null });
+      await report('connected', { phone: ownPhone, display_name: sock.user?.name || null });
     }
     if (connection === 'close') {
       connected = false;
       const code = lastDisconnect?.error?.output?.statusCode;
       if (code === DisconnectReason.loggedOut) {
         log.warn('Logged out: clearing the saved login so a new QR code appears');
+        ownPhone = null;
         await rm(AUTH_DIR, { recursive: true, force: true });
         await report('logged_out');
       } else {
@@ -236,10 +285,13 @@ async function sendQueued() {
       await sock.presenceSubscribe(m.jid).catch(() => undefined);
       await sock.sendPresenceUpdate('composing', m.jid).catch(() => undefined);
       await pause(600 + Math.min(2500, m.body.length * 25));
-      const sent = await sock.sendMessage(m.jid, { text: m.body }, options);
+      // Known before it goes, so its echo back from WhatsApp isn't taken for a reply typed on the phone.
+      const messageId = generateMessageIDV2(sock.user?.id);
+      if (sentByUs.size > 5000) sentByUs.clear();
+      sentByUs.add(messageId);
+      const sent = await sock.sendMessage(m.jid, { text: m.body }, { ...options, messageId });
       await sock.sendPresenceUpdate('paused', m.jid).catch(() => undefined);
       sentByUs.add(sent.key.id);
-      if (sentByUs.size > 5000) sentByUs.clear();
       results.push({ id: m.id, wa_id: sent.key.id, ok: true });
     } catch (e) {
       results.push({ id: m.id, ok: false, error: e.message });
@@ -266,8 +318,23 @@ async function shutdown() {
 }
 
 for (const signal of ['SIGINT', 'SIGTERM']) process.on(signal, shutdown);
-// The desktop app asks this way (Windows has no signals to send).
-process.on('message', (m) => { if (m && m.type === 'shutdown') shutdown(); });
+// The desktop app asks this way (Windows has no signals to send): stop, or
+// unlink from the phone first (when a number is removed from the app).
+process.on('message', async (m) => {
+  if (m?.type === 'shutdown') return shutdown();
+  if (m?.type === 'logout') {
+    log.warn('Unlink requested from the desktop app');
+    if (sock && connected) await sock.logout().catch(() => undefined);
+    else {
+      await rm(AUTH_DIR, { recursive: true, force: true });
+      await report('logged_out');
+    }
+    // Off VillaSafe's list of computers too.
+    await call('forget').catch((e) => log.warn({ err: e.message }, 'could not leave the list'));
+    forgotten = true;
+    try { process.send?.({ type: 'logged_out' }); } catch { /* no parent */ }
+  }
+});
 
 // A stray rejection from the WhatsApp library mustn't take the link down.
 process.on('unhandledRejection', (e) => log.error({ err: e?.message || String(e) }, 'unhandled rejection'));

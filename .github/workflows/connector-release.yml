@@ -1,8 +1,8 @@
 name: Build & Release VillaSafe WhatsApp Connector
 
-# The connector's Windows app (whatsapp-connector/) is released on its own
-# tags, connector-vX.Y.Z, and never marked "latest", so the Gate Bridge's
-# releases/latest/download links keep pointing at the bridge.
+# The connector's Windows and Mac apps (whatsapp-connector/) are released on
+# their own tags, connector-vX.Y.Z, and never marked "latest", so the Gate
+# Bridge's releases/latest/download links keep pointing at the bridge.
 
 on:
   push:
@@ -34,8 +34,33 @@ jobs:
           name: connector-windows
           path: whatsapp-connector/release/*.exe
 
+  build-mac:
+    name: Build for macOS
+    runs-on: macos-latest
+    defaults:
+      run:
+        working-directory: whatsapp-connector
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install deps
+        run: npm install
+      # No Apple Developer ID: build-scripts/adhoc-sign.cjs signs the app ad hoc
+      # so Macs with Apple chips open it (after Privacy & Security → Open Anyway).
+      - name: Build disk images (Apple chips and Intel)
+        env:
+          CSC_IDENTITY_AUTO_DISCOVERY: 'false'
+        run: npm run dist:mac -- --publish never
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: connector-macos
+          path: whatsapp-connector/release/*.dmg
+
   release:
-    needs: build
+    needs: [build, build-mac]
     runs-on: ubuntu-latest
     if: startsWith(github.ref, 'refs/tags/connector-v')
     permissions:
@@ -51,7 +76,10 @@ jobs:
           files: artifacts/**/*
           make_latest: false
           body: |
-            Windows app that keeps VillaSafe's WhatsApp number linked to the communications inbox.
+            Windows and Mac app that keeps VillaSafe's WhatsApp numbers linked to the communications inbox.
             Download it from VillaSafe → Platform overview → WhatsApp connector (super admin),
             install it on an always-on computer (no admin rights needed), and paste the setup key once.
-            It starts with Windows, runs in the background, and reconnects by itself.
+            It starts when someone signs in, runs in the background, and reconnects by itself.
+            One app can link several numbers; link the same number on two computers for a backup.
+            Mac: VillaSafeWhatsAppConnector-arm64.dmg for Apple chips, -x64.dmg for Intel. The app isn't
+            notarised: the first time, open System Settings → Privacy & Security and press Open Anyway.
