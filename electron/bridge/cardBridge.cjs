@@ -10,6 +10,7 @@ const os = require('os');
 const path = require('path');
 const hik = require('../drivers/hikvision.cjs');
 const diagnostics = require('./diagnostics.cjs');
+const tagStore = require('./tagStore.cjs');
 
 let lastProvisionSig = '';
 
@@ -119,24 +120,28 @@ function validUntilOf(t) {
 /**
  * What each Hikvision controller behind the lanes should hold: every tag that
  * may open now, as a card on a person allowed through the doors of the lanes
- * it may use, valid until it expires or its resident's next bill falls due.
+ * it may use — its own lane, and only vehicle lanes or pedestrian gates when
+ * the estate set it to one — valid until it expires or its resident's next
+ * bill falls due.
  */
 function desiredCards(lanes, tags) {
-  const byController = new Map(); // controllerId → { params, lanes: [{ laneId, doors }] }
+  const byController = new Map(); // controllerId → { params, lanes: [{ laneId, doors, traffic }] }
   for (const lane of lanes || []) {
     for (const d of (lane.devices || []).filter(x => x.driver === 'hikvision')) {
       const params = d.params || {};
       const id = hik.controllerIdFor(params);
       if (!byController.has(id)) byController.set(id, { params, lanes: [] });
-      byController.get(id).lanes.push({ laneId: lane.id, doors: doorsOfDevice(params) });
+      byController.get(id).lanes.push({ laneId: lane.id, doors: doorsOfDevice(params), traffic: tagStore.laneTraffic(lane) });
     }
   }
   const out = new Map();
   for (const [controllerId, { params, lanes: here }] of byController) {
     const cards = [];
     for (const t of approvedFor(tags, null)) {
-      const doors = [...new Set(here.filter((l) => !t.lane_id || t.lane_id === l.laneId).flatMap((l) => l.doors))].sort((a, b) => a - b);
-      if (!doors.length) continue; // locked to a lane on another controller
+      const doors = [...new Set(here
+        .filter((l) => (!t.lane_id || t.lane_id === l.laneId) && tagStore.fitsTraffic(t, l.traffic))
+        .flatMap((l) => l.doors))].sort((a, b) => a - b);
+      if (!doors.length) continue; // locked to a lane on another controller, or to another kind of lane
       const cardNo = controllerCardNo(t.tag_uid);
       cards.push({ cardNo, employeeNo: cardNo, name: t.label || null, doors, validUntil: validUntilOf(t) });
     }

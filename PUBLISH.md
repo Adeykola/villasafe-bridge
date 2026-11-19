@@ -44,6 +44,16 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.13** — Tags for people on foot. A lane is for vehicles, people on
+  foot or both (set in the lane wizard, or worked out from its devices: a
+  turnstile alone is a pedestrian lane), and a tag can be kept to vehicle
+  lanes or pedestrian gates. A windscreen tag set to vehicle lanes is refused
+  at the turnstile and a walking card set to pedestrian gates is refused at the
+  boom, on this PC and on the Hikvision controllers, offline too. A turnstile
+  opens for every tap: the same card waits only while the turnstile it
+  released is still open (not the 30 seconds a car's tag waits), and an
+  entry + exit turnstile can have a reader on each side, each releasing its
+  own rotor. Tags from before keep opening every lane.
 - **v1.2.12** — The Hikvision SDK installs from the bridge. While it isn't
   loaded, the Health page has **Get Hikvision SDK**: it opens Hikvision's own
   download page in a bridge window, and once the person there clicks Download

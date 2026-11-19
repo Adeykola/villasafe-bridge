@@ -1575,7 +1575,7 @@
         return `
         <li style="animation-delay:${Math.min(i, 12) * 20}ms">
           <div><div class="t">${esc(t.label || 'Unnamed tag')}</div><div class="sub mono">${esc(t.uid)}${t.cardNo && t.cardNo !== t.uid ? ` · card ${esc(t.cardNo)}` : ''}</div></div>
-          <div><div class="sub" style="margin:0">${esc(t.laneName || 'Every lane')}</div><div class="sub">${esc(t.status !== 'ok' && t.reason ? t.reason : t.validUntil ? `Until ${when(t.validUntil)}` : 'No end date')}</div></div>
+          <div><div class="sub" style="margin:0">${esc(t.where || t.laneName || 'Every lane')}</div><div class="sub">${esc(t.status !== 'ok' && t.reason ? t.reason : t.validUntil ? `Until ${when(t.validUntil)}` : 'No end date')}</div></div>
           <div class="wide">${presenceHtml(t, presence)}</div>
           <span class="st ${tone} end">${esc(label)}</span>
         </li>`;

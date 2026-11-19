@@ -23,10 +23,15 @@ function tagRows(tags, lanes, now = Date.now()) {
   return (tags || [])
     .map((t) => {
       const why = tagStore.refusal(t, null, now);
+      const access = tagStore.accessOf(t);
       return {
         uid: String(t.tag_uid || '').toUpperCase(),
         label: t.label || null,
         laneName: t.lane_id ? laneName.get(t.lane_id) || 'Another lane' : null,
+        access,
+        // Where it opens, for the list: its lane, else the kind of lane it's for.
+        where: t.lane_id ? laneName.get(t.lane_id) || 'Another lane'
+          : access === 'pedestrian' ? 'Pedestrian gates' : access === 'vehicle' ? 'Vehicle lanes' : null,
         status: why || 'ok',
         reason: why ? tagStore.REASON_TEXT[why] || why : null,
         validUntil: t.valid_until || null,

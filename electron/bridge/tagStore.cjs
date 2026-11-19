@@ -15,6 +15,9 @@
 //   expired    → refused (valid_until has passed — checked against this PC's
 //                clock, so it expires on time even offline)
 //   wrong lane → refused
+//   wrong kind of lane → refused: a tag the estate set to vehicle lanes only
+//                (a windscreen tag) at a pedestrian turnstile, or a card set to
+//                pedestrian gates only at a boom barrier
 //   otherwise  → opens
 const fs = require('fs');
 const os = require('os');
@@ -83,17 +86,52 @@ function find(uid) {
 }
 
 /**
- * Why a tag may not open, or null when it may.
- * @returns {null | 'unknown' | 'suspended' | 'owing' | 'expired' | 'wrong_lane'}
+ * Who a lane is for: 'vehicle', 'pedestrian' or 'both'. The estate sets it on
+ * the lane (traffic); a lane saved before that is worked out from its devices:
+ * a turnstile alone is for people on foot, a boom or tyre killer for vehicles.
+ * Null when there's no lane to go by.
  */
-function refusal(tag, laneId, now = Date.now()) {
+function laneTraffic(lane) {
+  if (!lane) return null;
+  const set = String(lane.traffic || '').toLowerCase();
+  if (set === 'vehicle' || set === 'pedestrian' || set === 'both') return set;
+  const kinds = new Set((lane.devices || []).map((d) => d.kind));
+  const onFoot = kinds.has('turnstile');
+  const driving = kinds.has('barrier') || kinds.has('spike');
+  if (onFoot && !driving) return 'pedestrian';
+  if (driving && !onFoot) return 'vehicle';
+  return 'both';
+}
+
+/** Where a tag may open: 'vehicle' lanes, 'pedestrian' gates, or 'any' (every lane, as before). */
+function accessOf(tag) {
+  const mode = String(tag?.access_mode || '').toLowerCase();
+  return mode === 'vehicle' || mode === 'pedestrian' ? mode : 'any';
+}
+
+/** Why this tag may not open a lane for this traffic, or null when it may. */
+function trafficRefusal(tag, traffic) {
+  const mode = accessOf(tag);
+  if (mode === 'vehicle' && traffic === 'pedestrian') return 'vehicle_only';
+  if (mode === 'pedestrian' && traffic === 'vehicle') return 'pedestrian_only';
+  return null;
+}
+
+const fitsTraffic = (tag, traffic) => !trafficRefusal(tag, traffic);
+
+/**
+ * Why a tag may not open, or null when it may.
+ * traffic: who the lane is for (laneTraffic), when the read came from a lane.
+ * @returns {null | 'unknown' | 'suspended' | 'owing' | 'expired' | 'wrong_lane' | 'vehicle_only' | 'pedestrian_only'}
+ */
+function refusal(tag, laneId, now = Date.now(), traffic = null) {
   if (!tag) return 'unknown';
   if (tag.is_active === false) return 'suspended';
   if (tag.paused) return tag.pause_reason === 'owing' || !tag.pause_reason ? 'owing' : tag.pause_reason;
   if (tag.owing_from && !tag.owing_override && new Date(tag.owing_from).getTime() <= now) return 'owing';
   if (tag.valid_until && new Date(tag.valid_until).getTime() <= now) return 'expired';
   if (tag.lane_id && laneId && tag.lane_id !== laneId) return 'wrong_lane';
-  return null;
+  return trafficRefusal(tag, traffic);
 }
 
 const REASON_TEXT = {
@@ -102,6 +140,8 @@ const REASON_TEXT = {
   owing: 'resident has an overdue bill',
   expired: 'access has expired',
   wrong_lane: 'tag not allowed on this lane',
+  vehicle_only: 'vehicle tag — not for a pedestrian gate',
+  pedestrian_only: 'pedestrian card — not for a vehicle lane',
 };
 
 /** Tags allowed to open right now (optionally on one lane). */
@@ -126,9 +166,12 @@ function effective(now = Date.now()) {
  */
 function signature(now = Date.now()) {
   return state.tags
-    .map((t) => `${uidOf(t)}:${refusal(t, null, now) || 'ok'}:${t.lane_id || ''}`)
+    .map((t) => `${uidOf(t)}:${refusal(t, null, now) || 'ok'}:${t.lane_id || ''}:${accessOf(t)}`)
     .sort()
     .join('|');
 }
 
-module.exports = { load, save, clear, tags, savedAt, find, refusal, allowed, effective, signature, REASON_TEXT };
+module.exports = {
+  load, save, clear, tags, savedAt, find, refusal, allowed, effective, signature, REASON_TEXT,
+  laneTraffic, accessOf, fitsTraffic,
+};

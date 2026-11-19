@@ -50,7 +50,12 @@ const autoCloseTimers = new Map(); // laneId -> timeout
 // so the boom closes behind the car instead of going back up.
 const PASSING_MIN_MS = 30_000;
 const passingMs = (lane) => Math.max(PASSING_MIN_MS, ((Number(lane?.default_open_seconds) || 0) + 20) * 1000);
-const openedByTag = new Map(); // `${laneId}:${tagUid}` -> when it opened the lane
+// On foot it's different: each tap at a turnstile is someone asking to go
+// through, so a tag only waits while the turnstile it released is still open
+// — and the exit side is its own turnstile, so stepping straight back out works.
+const TAP_MIN_MS = 3000;
+const tapMs = (lane) => Math.max(TAP_MIN_MS, (Number(lane?.default_open_seconds) || 0) * 1000);
+const openedByTag = new Map(); // `${laneId}:${tagUid}` (on foot: `${laneId}:${side}:${tagUid}`) -> when it opened the lane
 
 function lockedResult() {
   return { success: false, error: licence.message || 'This PC needs a VillaSafe desktop licence key.' };
@@ -206,7 +211,16 @@ async function drainWiegandReads() {
 }
 
 // Event names the web's RFID activity tab understands.
-const REFUSAL_ACTION = { unknown: 'rfid_denied', wrong_lane: 'rfid_blocked', suspended: 'rfid_paused', owing: 'rfid_paused', expired: 'rfid_paused' };
+const REFUSAL_ACTION = {
+  unknown: 'rfid_denied', wrong_lane: 'rfid_blocked', vehicle_only: 'rfid_blocked', pedestrian_only: 'rfid_blocked',
+  suspended: 'rfid_paused', owing: 'rfid_paused', expired: 'rfid_paused',
+};
+
+/** Which side of a turnstile a reader stands at, when the lane says. */
+const readerSide = (d) => {
+  const side = String(d?.params?.side || '').toLowerCase();
+  return side === 'entry' || side === 'exit' ? side : undefined;
+};
 
 /**
  * One decision for every tag read, from any reader, using the tag list saved
@@ -214,11 +228,16 @@ const REFUSAL_ACTION = { unknown: 'rfid_denied', wrong_lane: 'rfid_blocked', sus
  */
 async function handleTagRead({ lane = null, laneId = lane?.id || null, tagUid, via, extra = {}, open = true, logOnly = false, side }) {
   const tag = tagStore.find(tagUid);
-  const why = tagStore.refusal(tag, laneId);
+  // Who the lane is for, so a car-only tag can't release a turnstile (and a walking card can't lift the boom).
+  const traffic = tagStore.laneTraffic(lane || (laneId ? lanes.find((l) => l.id === laneId) : null));
+  const why = tagStore.refusal(tag, laneId, Date.now(), traffic);
   // Report the enrolled number (it can differ: a card enrolled by its printed
   // Wiegand number, read as a full EPC), so VillaSafe updates the right tag.
   const enrolled = tag ? String(tag.tag_uid).toUpperCase() : tagUid;
-  const details = { tagUid: enrolled, ...(enrolled !== tagUid ? { readUid: tagUid } : {}), label: tag?.label || null, via, ...extra };
+  const details = {
+    tagUid: enrolled, ...(enrolled !== tagUid ? { readUid: tagUid } : {}), label: tag?.label || null, via,
+    ...(side ? { side } : {}), ...(traffic === 'pedestrian' ? { onFoot: true } : {}), ...extra,
+  };
   // "logged": this PC records its own detailed rfid_* event for the read, so
   // VillaSafe only bumps last_seen and doesn't log it a second time. A tag
   // that opens the gate is logged by VillaSafe (the PC logs the gate "open").
@@ -236,9 +255,11 @@ async function handleTagRead({ lane = null, laneId = lane?.id || null, tagUid, v
   }
   if (open && lane) {
     // The same car still driving through: leave the boom to close behind it.
-    const key = `${lane.id}:${enrolled}`;
+    // On foot: the same tap while the turnstile it released is still open.
+    const onFoot = traffic === 'pedestrian';
+    const key = onFoot ? `${lane.id}:${side || ''}:${enrolled}` : `${lane.id}:${enrolled}`;
     const now = Date.now();
-    if (now - (openedByTag.get(key) || 0) < passingMs(lane)) return true;
+    if (now - (openedByTag.get(key) || 0) < (onFoot ? tapMs(lane) : passingMs(lane))) return true;
     openedByTag.set(key, now);
     if (openedByTag.size > 2000) {
       for (const [k, at] of openedByTag) if (now - at > PASSING_MIN_MS * 4) openedByTag.delete(k);
@@ -366,8 +387,10 @@ function refreshRfidReaders({ force = false } = {}) {
       .flatMap(serialPortsOf);
     try {
       // The driver only debounces and reports; "log only" is the one mode it keeps.
+      // A turnstile can have a reader on each side: each opens its own side.
+      const side = readerSide(d);
       rfid.startReader(d, async (tagUid, _dev, meta) => {
-        await handleTagRead({ lane, tagUid, via: 'reader', logOnly: !!meta?.logOnly });
+        await handleTagRead({ lane, tagUid, via: 'reader', side, logOnly: !!meta?.logOnly });
       }, { reservedPorts, log: diagnostics.log });
     } catch (e) { diagnostics.log(`RFID start failed: ${e.message}`); }
   }
@@ -669,7 +692,7 @@ function isOnline() { return status.online !== false; }
 function isLicensed() { return !licence.locked; }
 
 module.exports = {
-  _internal: { tagForSwipe },
+  _internal: { tagForSwipe, handleTagRead },
   startBridge, stopBridge, getStatus, isLicensed,
   runCommandLocal, runDeviceLocal, getLanes, getRfidTags, refreshDeviceHealth, isOnline,
 };
