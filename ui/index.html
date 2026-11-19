@@ -124,6 +124,23 @@
     .banner svg { width: 20px; height: 20px; flex: none; color: var(--amber); margin-top: 1px; }
     .banner strong { color: #fff3d6; }
 
+    /* ---------- Hikvision SDK card (Health) ---------- */
+    .sdk-card {
+      margin-bottom: 18px; padding: 18px 20px; border-radius: 18px;
+      background: linear-gradient(180deg, var(--panel-2), var(--panel)); border: 1px solid rgba(244, 175, 31, .45);
+    }
+    .sdk-card h3 { margin: 0 0 4px; font-size: 17px; font-weight: 800; letter-spacing: -.02em; }
+    .sdk-card p { margin: 0 0 14px; color: var(--muted); font-size: 13.5px; max-width: 72ch; }
+    .sdk-card p strong { color: var(--text); }
+    .sdk-progress { margin-top: 14px; }
+    .sdk-progress .bar { height: 8px; border-radius: 99px; background: var(--line); overflow: hidden; }
+    .sdk-progress .bar span { display: block; height: 100%; width: 0; background: var(--blue); border-radius: inherit; transition: width .3s var(--ease); }
+    .sdk-progress .bar.indeterminate span { width: 35%; animation: sdkSlide 1.2s ease-in-out infinite; }
+    @keyframes sdkSlide { from { transform: translateX(-100%); } to { transform: translateX(300%); } }
+    .sdk-progress .label { margin-top: 8px; font-size: 12.5px; color: var(--muted); }
+    .sdk-progress .label.err { color: #ff9a9d; }
+    .sdk-progress .label.ok { color: #7ee2a8; }
+
     /* ---------- Lanes ---------- */
     .lanes { display: grid; grid-template-columns: repeat(auto-fill, minmax(420px, 1fr)); gap: 18px; }
     .lane {
@@ -665,6 +682,19 @@
               <button class="btn primary" id="diagBtn">Run health check</button>
             </div>
           </div>
+          <div class="sdk-card" id="sdkCard" hidden>
+            <h3>Hikvision SDK isn't installed</h3>
+            <p id="sdkCardText">Hikvision controllers need Hikvision's SDK on this PC, and Hikvision doesn't let VillaSafe include it. Get it from Hikvision once: press <strong>Get Hikvision SDK</strong>, click <strong>Download</strong> on Hikvision's page and accept their terms. The bridge installs it by itself.</p>
+            <div class="row-btns">
+              <button class="btn primary" id="sdkGetBtn">Get Hikvision SDK</button>
+              <button class="btn ghost" id="sdkFoundBtn" hidden>Install from Downloads</button>
+              <button class="btn ghost" id="sdkZipBtn">Install from a zip file…</button>
+            </div>
+            <div class="sdk-progress" id="sdkProgress" hidden>
+              <div class="bar"><span></span></div>
+              <div class="label"></div>
+            </div>
+          </div>
           <div id="diagOut">
             <div class="hero-empty">
               <div>
@@ -742,6 +772,7 @@
       if (page === 'activity') { unseenActivity = 0; updateBadge(); }
       if (page === 'offline') { refreshFirewall(); loadPasses(); }
       if (page === 'registered') { loadTags(); if (!devicesReadOnce) readDevices(); }
+      if (page === 'health') refreshSdkCard();
     }
     document.querySelectorAll('.rail-btn').forEach((btn) => {
       btn.addEventListener('click', () => {
@@ -1168,6 +1199,7 @@
         ${devs ? `<ul class="checks">${devs}</ul>` : '<p class="page-sub">No devices set up yet.</p>'}
         <div class="section-label">Recent log</div>
         <pre class="logs">${esc((lastDiag.logs || []).slice(-40).join('\n') || 'No log lines yet.')}</pre>`;
+      refreshSdkCard();
     };
     document.addEventListener('click', async (e) => {
       if (e.target?.id !== 'retrySdkBtn') return;
@@ -1177,6 +1209,69 @@
       toast(loaded ? 'Hikvision SDK loaded' : `Still not loaded: ${r.sdk?.lastError?.message || r.error || 'unknown error'}`, loaded ? 'ok' : 'err');
       $('diagBtn').click();
     });
+
+    // ---------- Hikvision SDK: from Hikvision's page, installed by the bridge ----------
+    let sdkWorking = false;
+    let sdkJustInstalled = false;
+    const mb = (n) => `${Math.max(0, Math.round((n || 0) / 1048576))} MB`;
+    async function refreshSdkCard() {
+      if (!window.bridge.findSdkZip) return;
+      let hw = null;
+      let found = null;
+      try { [hw, found] = await Promise.all([window.bridge.hardwareStatus(), window.bridge.findSdkZip()]); } catch { return; }
+      const loaded = !!hw?.sdk?.loaded;
+      $('sdkCard').hidden = loaded && !sdkWorking && !sdkJustInstalled;
+      const foundBtn = $('sdkFoundBtn');
+      foundBtn.hidden = !found;
+      if (found) foundBtn.textContent = `Install ${found.version ? `SDK ${found.version.split(' ')[0]}` : found.name} from Downloads`;
+    }
+    function sdkProgress({ stage, done = 0, total = 0, error, version } = {}) {
+      const box = $('sdkProgress');
+      const bar = box.querySelector('.bar');
+      const fill = bar.querySelector('span');
+      const label = box.querySelector('.label');
+      $('sdkCard').hidden = false;
+      box.hidden = false;
+      label.className = 'label';
+      sdkWorking = stage === 'downloading' || stage === 'installing' || stage === 'waiting';
+      ['sdkGetBtn', 'sdkFoundBtn', 'sdkZipBtn'].forEach((id) => { $(id).disabled = sdkWorking && stage !== 'waiting'; });
+      const pct = total ? Math.min(100, Math.round((done / total) * 100)) : null;
+      bar.hidden = stage === 'waiting' || stage === 'error';
+      bar.classList.toggle('indeterminate', sdkWorking && pct === null);
+      fill.style.width = pct === null ? '' : `${pct}%`;
+      if (stage === 'waiting') {
+        label.textContent = 'Hikvision\'s page is open in its own window. Click Download next to "Device Network SDK_Win64", then accept their terms.';
+      } else if (stage === 'downloading') {
+        label.textContent = total ? `Downloading from Hikvision: ${mb(done)} of ${mb(total)} (${pct}%)` : `Downloading from Hikvision: ${mb(done)}`;
+      } else if (stage === 'installing') {
+        label.textContent = total ? `Installing: ${pct}%` : 'Opening the zip…';
+      } else if (stage === 'done') {
+        sdkJustInstalled = true;
+        fill.style.width = '100%';
+        label.className = 'label ok';
+        label.textContent = `Hikvision SDK${version ? ` ${version}` : ''} installed and loaded. Hikvision lanes work now.`;
+        toast('Hikvision SDK installed', 'ok');
+        addFeed({ kind: 'ok', what: 'Hikvision SDK installed', src: 'Health' });
+        setTimeout(() => { sdkJustInstalled = false; box.hidden = true; refreshSdkCard(); }, 8000);
+      } else if (stage === 'error') {
+        fill.style.width = '0';
+        label.className = 'label err';
+        label.textContent = error || 'Something went wrong. Try again.';
+      }
+    }
+    if (window.bridge.onSdkProgress) window.bridge.onSdkProgress(sdkProgress);
+    $('sdkGetBtn').onclick = async () => {
+      const r = await window.bridge.openSdkDownload();
+      sdkProgress(r?.ok ? { stage: 'waiting' } : { stage: 'error', error: r?.error });
+    };
+    async function installSdkFromZip(useFound) {
+      const r = await window.bridge.installSdkZip(useFound);
+      if (r?.cancelled) return;
+      if (r?.alreadyLoaded) { toast('The Hikvision SDK is already installed and loaded', 'ok'); refreshSdkCard(); }
+      // Everything else is reported through sdkProgress.
+    }
+    $('sdkFoundBtn').onclick = () => installSdkFromZip(true);
+    $('sdkZipBtn').onclick = () => installSdkFromZip(false);
     $('copyDiag').onclick = async () => {
       if (!lastDiag) return;
       await navigator.clipboard.writeText(JSON.stringify(lastDiag, null, 2));

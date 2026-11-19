@@ -37,7 +37,10 @@ function createApp({ token } = {}) {
   }));
 
   // Try the SDK again after someone copies it in, without restarting the app.
-  app.post('/api/sdk/reload', (_req, res) => {
+  // After the bridge installs a fresh copy, an earlier failure to load the old
+  // files (a 32-bit SDK, say) doesn't count against the new ones.
+  app.post('/api/sdk/reload', (req, res) => {
+    if (req.body && req.body.afterInstall) sdkLoader.forgetError();
     try { sdkLoader.load(); } catch { /* reported through status() */ }
     res.json({ sdk: sdkLoader.status() });
   });

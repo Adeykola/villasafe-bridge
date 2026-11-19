@@ -278,6 +278,11 @@ function status() {
   };
 }
 
+/** Let load() try again after new SDK files were installed. No effect once loaded. */
+function forgetError() {
+  if (!sdk) loadError = null;
+}
+
 function shutdown() {
   if (sdk) {
     try { sdk.api.NET_DVR_Cleanup(); } catch { /* noop */ }
@@ -285,4 +290,4 @@ function shutdown() {
   }
 }
 
-module.exports = { load, status, shutdown };
+module.exports = { load, status, shutdown, forgetError };

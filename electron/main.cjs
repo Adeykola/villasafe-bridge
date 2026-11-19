@@ -1,5 +1,6 @@
-const { app, BrowserWindow, ipcMain, powerSaveBlocker, Tray, Menu } = require('electron');
+const { app, BrowserWindow, ipcMain, powerSaveBlocker, Tray, Menu, dialog, session } = require('electron');
 const { execFile } = require('child_process');
+const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const Store = require('./config/laneStore.cjs');
@@ -32,6 +33,7 @@ const { startAnprServer } = require('./bridge/anprServer.cjs');
 const scheduler = require('./bridge/scheduler.cjs');
 const diagnostics = require('./bridge/diagnostics.cjs');
 const offlineQueue = require('./bridge/offlineQueue.cjs');
+const sdkInstaller = require('./bridge/sdkInstaller.cjs');
 
 let win;
 let tray = null;
@@ -230,6 +232,147 @@ ipcMain.handle('hardware:status', async () => {
 ipcMain.handle('hardware:reloadSdk', async () => {
   try { return { ok: true, ...(await hikvision.bridgeRequest('POST', '/api/sdk/reload', {})) }; }
   catch (e) { return { ok: false, error: e.message }; }
+});
+
+// ---------- Hikvision SDK, installed from Hikvision's own download ----------
+// Hikvision only hands the SDK zip to someone who clicks Download on its page,
+// so the bridge opens that page in a window of its own. The person clicks
+// Download and accepts Hikvision's terms; the bridge catches the file and
+// installs it (sdkInstaller), then loads it without a restart.
+let sdkWindow = null;
+let sdkBusy = false;
+const sendSdk = (p) => { if (win && !win.isDestroyed()) win.webContents.send('sdk:progress', p); };
+const isHikvisionUrl = (u) => {
+  try {
+    const { protocol, hostname } = new URL(u);
+    return protocol === 'https:' && (hostname === 'hikvision.com' || hostname.endsWith('.hikvision.com'));
+  } catch { return false; }
+};
+
+async function installSdkZip(file) {
+  if (sdkBusy) return { ok: false, error: 'The SDK is already being installed.' };
+  const h = await hikvision.bridgeHealth();
+  if (h.body?.sdk?.loaded) return { ok: true, alreadyLoaded: true, sdk: h.body.sdk };
+  sdkBusy = true;
+  try {
+    sendSdk({ stage: 'installing', done: 0, total: 0 });
+    let last = 0;
+    const r = await sdkInstaller.installFromZip(file, {
+      onProgress: ({ done, total }) => {
+        if (Date.now() - last < 250 && done < total) return;
+        last = Date.now();
+        sendSdk({ stage: 'installing', done, total });
+      },
+    });
+    diagnostics.log(`Hikvision SDK${r.version ? ` ${r.version}` : ''} installed into ${r.folder} (${r.files} files)`);
+    let reload;
+    try { reload = await hikvision.bridgeRequest('POST', '/api/sdk/reload', { afterInstall: true }); }
+    catch (e) { reload = { error: e.message }; }
+    const loaded = !!reload?.sdk?.loaded;
+    const result = {
+      ok: loaded, installed: true, version: r.version, folder: r.folder, sdk: reload?.sdk || null,
+      error: loaded ? null
+        : `The SDK is installed but didn't load (${reload?.sdk?.lastError?.message || reload?.error || 'unknown error'}). Quit the bridge from its tray icon and open it again.`,
+    };
+    // Lanes stop saying "SDK not loaded" straight away.
+    if (loaded) Promise.resolve().then(refreshDeviceHealth).catch(() => {});
+    sendSdk({ stage: loaded ? 'done' : 'error', ...result });
+    return result;
+  } catch (e) {
+    const error = e instanceof sdkInstaller.SdkInstallError ? e.message : `Couldn't install the SDK: ${e.message}`;
+    diagnostics.log(`Hikvision SDK install failed: ${error}`);
+    sendSdk({ stage: 'error', error });
+    return { ok: false, error };
+  } finally {
+    sdkBusy = false;
+  }
+}
+
+function onSdkDownload(_e, item) {
+  const name = item.getFilename();
+  if (!/\.zip$/i.test(name)) {
+    item.cancel();
+    sendSdk({ stage: 'error', error: `That download (${name}) isn't the SDK zip. Click Download next to "Device Network SDK_Win64".` });
+    return;
+  }
+  const dir = sdkInstaller.downloadsDir();
+  fs.mkdirSync(dir, { recursive: true });
+  const file = path.join(dir, path.basename(name));
+  item.setSavePath(file);
+  // Hikvision's page has done its part; the download carries on in the background.
+  if (sdkWindow && !sdkWindow.isDestroyed()) sdkWindow.hide();
+  showWindow();
+  sendSdk({ stage: 'downloading', done: 0, total: item.getTotalBytes(), name });
+  let last = 0;
+  item.on('updated', (_ev, state) => {
+    if (state !== 'progressing' || Date.now() - last < 300) return;
+    last = Date.now();
+    sendSdk({ stage: 'downloading', done: item.getReceivedBytes(), total: item.getTotalBytes(), name });
+  });
+  item.once('done', async (_ev, state) => {
+    if (sdkWindow && !sdkWindow.isDestroyed()) sdkWindow.close();
+    if (state !== 'completed') {
+      sendSdk({ stage: 'error', error: state === 'cancelled' ? 'The SDK download was cancelled.' : 'The SDK download stopped before it finished. Check the internet and try again.' });
+      return;
+    }
+    diagnostics.log(`Hikvision SDK downloaded: ${file}`);
+    await installSdkZip(file);
+  });
+}
+
+function openSdkDownload() {
+  const page = sdkInstaller.PAGE_URL[process.platform];
+  if (!page) return { ok: false, error: 'Download the Hikvision SDK for this computer from hikvision.com, then use "Install from a zip file".' };
+  if (sdkWindow && !sdkWindow.isDestroyed()) { sdkWindow.show(); sdkWindow.focus(); return { ok: true }; }
+  const ses = session.fromPartition('persist:hikvision-sdk');
+  if (!ses.listenerCount('will-download')) ses.on('will-download', onSdkDownload);
+  sdkWindow = new BrowserWindow({
+    width: 1100,
+    height: 780,
+    parent: win || undefined,
+    autoHideMenuBar: true,
+    title: 'Hikvision SDK: click Download, then accept Hikvision\'s terms. The bridge installs it for you.',
+    icon: path.join(__dirname, '..', 'build', process.platform === 'win32' ? 'icon.ico' : 'icon.png'),
+    webPreferences: { session: ses, contextIsolation: true, nodeIntegration: false, sandbox: true },
+  });
+  // Keep the instruction in the title bar instead of Hikvision's page title.
+  sdkWindow.on('page-title-updated', (e) => e.preventDefault());
+  // Stay on hikvision.com. Its Download button may open the file in a new
+  // window; download it here instead.
+  sdkWindow.webContents.setWindowOpenHandler(({ url }) => {
+    if (isHikvisionUrl(url)) {
+      if (/\.zip$/i.test(new URL(url).pathname)) sdkWindow.webContents.downloadURL(url);
+      else sdkWindow.loadURL(url);
+    }
+    return { action: 'deny' };
+  });
+  sdkWindow.webContents.on('will-navigate', (e, url) => { if (!isHikvisionUrl(url)) e.preventDefault(); });
+  sdkWindow.on('closed', () => { sdkWindow = null; });
+  sdkWindow.loadURL(page);
+  return { ok: true };
+}
+
+/** An SDK zip already on this PC, from the bridge's own downloads or the user's. */
+const findSdkZip = () => sdkInstaller.findDownloadedZip([sdkInstaller.downloadsDir(), app.getPath('downloads')]);
+
+ipcMain.handle('sdk:find', () => findSdkZip());
+ipcMain.handle('sdk:openDownload', () => openSdkDownload());
+ipcMain.handle('sdk:installZip', async (_e, { useFound = false } = {}) => {
+  let file = null;
+  if (useFound) {
+    file = findSdkZip()?.file || null;
+    if (!file) return { ok: false, error: 'The SDK zip is no longer in Downloads.' };
+  } else {
+    const pick = await dialog.showOpenDialog(win, {
+      title: 'Choose the Hikvision SDK zip',
+      buttonLabel: 'Install',
+      filters: [{ name: 'Zip files', extensions: ['zip'] }],
+      properties: ['openFile'],
+    });
+    if (pick.canceled || !pick.filePaths.length) return { ok: false, cancelled: true };
+    file = pick.filePaths[0];
+  }
+  return installSdkZip(file);
 });
 ipcMain.handle('lan:firewall', (_e, opts) => lanReach.firewallStatus(opts || {}));
 ipcMain.handle('lan:allowPhones', () => lanReach.allowGuardPhones());

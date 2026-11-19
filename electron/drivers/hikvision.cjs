@@ -83,8 +83,7 @@ async function diagnoseBridgeFailure(originalError) {
     const last = parts.join(' ');
     return new Error(
       'HCNetSDK is not loaded. ' +
-      `Copy the Hikvision SDK files into ${sdk.folder || 'the hcnetsdk folder'} (see INSTALL-HIKVISION.md), ` +
-      'then press Retry SDK on the Health page. ' +
+      'Open the Health page and press Get Hikvision SDK: click Download on Hikvision\'s page and the bridge installs it. ' +
       (last ? `SDK error: ${last}. ` : '') +
       'Underlying: ' + originalError.message,
     );

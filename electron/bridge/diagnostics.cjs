@@ -65,7 +65,8 @@ async function runFull(cfg, lanes) {
   } else {
     steps.push({ id: 'hikvision', label: sdk?.loaded ? 'Hikvision SDK loaded' : usesHikvision ? 'Hikvision SDK loaded' : 'Hikvision SDK not installed (no Hikvision devices, so not needed)',
       ok: !!sdk?.loaded || !usesHikvision,
-      hint: `Copy the whole Hikvision HCNetSDK folder into ${sdk?.folder || 'the hcnetsdk folder'}, then press Retry SDK.` +
+      hint: 'Press Get Hikvision SDK at the top of this page and click Download on Hikvision\'s page; the bridge installs it. ' +
+        `Or copy the SDK's library folder into ${sdk?.folder || 'the hcnetsdk folder'} and press Retry SDK.` +
         (sdk?.lastError?.message ? ` (${sdk.lastError.message})` : '') });
   }
 

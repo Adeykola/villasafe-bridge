@@ -44,6 +44,18 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.12** — The Hikvision SDK installs from the bridge. While it isn't
+  loaded, the Health page has **Get Hikvision SDK**: it opens Hikvision's own
+  download page in a bridge window, and once the person there clicks Download
+  and accepts Hikvision's terms, the bridge downloads the zip, unpacks just its
+  library folder into `%USERPROFILE%\.villasafe-gate-bridge\hcnetsdk\win-x64\`
+  and loads it, with no restart. **Install from Downloads** picks up a zip
+  already in the PC's Downloads folder, and **Install from a zip file…** takes
+  one from a USB stick. The 32-bit SDK, a zip without the library, and a
+  damaged zip are refused with what to download instead, and an SDK folder
+  already there is left as it was. The installer still contains no Hikvision
+  files: Hikvision doesn't allow it, and its server only gives the zip to a
+  person who clicks Download.
 - **v1.2.11** — The boom closes behind a car whose tag is still being read.
   A long-range reader keeps sending a car's tag while it drives through; the
   bridge opened the lane again for every send more than 4 seconds apart, and

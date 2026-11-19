@@ -5,17 +5,40 @@ extra to install or start. The one thing the app can't ship is the SDK itself:
 Hikvision's licence forbids redistributing it, so it is downloaded once per
 guardhouse PC.
 
-## 1. Download
+Hikvision gives it out free, with no sign-in, on its HiTools page:
+**Device Network SDK_Win64**,
+<https://www.hikvision.com/en/support/tools/hitools/clc33f9cd4117c753a/>
+(V6.1.11.40, 298 MB, in October 2026). Its download server only hands the zip
+to someone who clicks Download on that page and accepts Hikvision's terms, so
+it can't be fetched by a script.
 
-1. Sign in to the Hikvision Partner Portal (`https://www.hikvision.com/en/support/download/sdk/`).
-2. Download **Device Network SDK (HCNetSDK) V6.1.9.x** or later, for the OS
-   the guardhouse PC runs.
-3. Extract the archive.
+## 1. Install it from the bridge (1.2.12 and later)
 
-## 2. Copy the libraries
+Open **Health** in the Gate Bridge. While the SDK isn't loaded, a card at the
+top has three buttons:
 
-Copy the whole `lib` folder from the archive into the Gate Bridge's SDK folder
-in the user profile (create the folders if they don't exist):
+- **Get Hikvision SDK** opens Hikvision's page in a window of the bridge's own.
+  Click **Download** next to "Device Network SDK_Win64" and accept Hikvision's
+  terms. The bridge downloads the zip to `~/.villasafe-gate-bridge/downloads/`,
+  shows the progress, installs it and loads it. No restart.
+- **Install from Downloads** appears when a Hikvision SDK zip is already in the
+  PC's Downloads folder (downloaded in a browser, say).
+- **Install from a zip file…** takes the zip from anywhere, such as a USB stick
+  for a PC with no internet.
+
+The bridge unpacks only the zip's library folder (the one holding
+`HCNetSDK.dll`, with `HCNetSDKCom\` and the rest beside it; the demos and
+manuals are left out) into
+`%USERPROFILE%\.villasafe-gate-bridge\hcnetsdk\win-x64\`. It refuses a zip
+without `HCNetSDK.dll` and `HCCore.dll`, and the 32-bit SDK, and leaves any SDK
+folder that was already there untouched if something goes wrong.
+(`electron/bridge/sdkInstaller.cjs`)
+
+## 2. Or copy the libraries by hand
+
+Download the zip from the page above and extract it. Copy the contents of its
+library folder (the one with `HCNetSDK.dll` in it) into the Gate Bridge's SDK
+folder in the user profile (create the folders if they don't exist):
 
 | Platform | Folder | Required files |
 | --- | --- | --- |
@@ -46,6 +69,10 @@ connection section should show **Hikvision SDK loaded**. If it doesn't, the
 hint names the folder the app expects; copy the files there and press
 **Retry SDK** (no restart needed).
 
+The bridge was written against V6.1.9. After installing a newer SDK, open each
+Hikvision lane once from the Gates page and check a tag swipe reaches the
+Activity page.
+
 For debugging without the desktop app, the service still runs on its own:
 
 ```
@@ -59,4 +86,5 @@ curl http://127.0.0.1:8788/api/health
 
 HCNetSDK is subject to Hikvision's SDK licence. Do not commit the binaries
 to git or redistribute them. `desktop/.gitignore` already excludes
-`vendor/hcnetsdk/`.
+`vendor/hcnetsdk/`. The bridge's own SDK button never downloads from anywhere
+but Hikvision's page, and only when someone clicks Download there.

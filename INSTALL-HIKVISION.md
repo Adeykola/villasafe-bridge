@@ -12,16 +12,20 @@ DS-K2804 firmware ships with HTTP/HTTPS **disabled by default**, so VillaSafe ta
 
 Pairing asks for the estate's **desktop licence key** (`VS-XXXXX-XXXXX-XXXXX-XXXXX`). VillaSafe issues it once the estate has paid for the desktop app. The same key works on every gate PC in the estate. PCs that were paired before licences existed show a **Gates locked** screen; type the key there. You don't need to pair again.
 
-## 3. Drop in the Hikvision SDK
+## 3. Install the Hikvision SDK
 
-Hikvision does not permit us to redistribute the SDK, so download it once from the Hikvision partner portal.
+Hikvision does not permit us to redistribute the SDK, so each gate PC gets it from Hikvision once. It's free and needs no sign-in.
 
-1. Download `Device Network SDK (HCNetSDK) V6.1.9.x` for Windows x64.
-2. Copy the extracted library files (including `HCNetSDK.dll`, `HCCore.dll`, `PlayCtrl.dll`, `hpr.dll`, `libeay32.dll`, `ssleay32.dll`, and the entire `HCNetSDKCom\` folder) into:
-   ```
-   %USERPROFILE%\.villasafe-gate-bridge\hcnetsdk\win-x64\
-   ```
-3. In the Gate Bridge, open **Health**, press **Run health check**, then **Retry SDK** if it isn't loaded yet. It should say **Hikvision SDK loaded**.
+**From Gate Bridge 1.2.12:**
+
+1. Open **Health**. The card at the top says the Hikvision SDK isn't installed.
+2. Press **Get Hikvision SDK**. Hikvision's page opens in its own window.
+3. Click **Download** next to "Device Network SDK_Win64" and accept Hikvision's terms.
+4. The bridge downloads it (about 300 MB), installs it and loads it. The card then says it's installed and loaded.
+
+No internet on the gate PC? Download the zip on another computer from <https://www.hikvision.com/en/support/tools/hitools/clc33f9cd4117c753a/>, bring it on a USB stick, and press **Install from a zip file…**. If the zip is already in the PC's Downloads folder, press **Install from Downloads**.
+
+**By hand (any version):** extract the zip and copy the contents of its library folder (the one with `HCNetSDK.dll`, `HCCore.dll`, `PlayCtrl.dll`, `hpr.dll`, `libeay32.dll`, `ssleay32.dll` and the `HCNetSDKCom\` folder) into `%USERPROFILE%\.villasafe-gate-bridge\hcnetsdk\win-x64\`. Then open **Health**, press **Run health check**, then **Retry SDK**. It should say **Hikvision SDK loaded**.
 
 ## 4. Verify the controller
 

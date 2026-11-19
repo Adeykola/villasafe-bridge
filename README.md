@@ -39,7 +39,7 @@ The desktop app only runs an estate's gates once that estate has paid for it. Su
 
 ## Hikvision (HCNetSDK) service
 
-`hardware/` is the Hikvision service that used to ship separately as "VillaSafeHardwareBridge". It now starts inside this app, on loopback port 8788 (or the next free port up to 8792), with a token minted on every launch. Controller records live in `~/.villasafe-gate-bridge/hardware/`. The Hikvision SDK itself must be copied onto the PC once (Hikvision forbids redistributing it); see `docs/hardware/SDK_INSTALL.md`.
+`hardware/` is the Hikvision service that used to ship separately as "VillaSafeHardwareBridge". It now starts inside this app, on loopback port 8788 (or the next free port up to 8792), with a token minted on every launch. Controller records live in `~/.villasafe-gate-bridge/hardware/`. The Hikvision SDK itself goes onto the PC once (Hikvision forbids redistributing it): from 1.2.12, **Health → Get Hikvision SDK** opens Hikvision's download page, and the bridge installs the zip once someone clicks Download there. See `docs/hardware/SDK_INSTALL.md`.
 
 ## Packaging
 
