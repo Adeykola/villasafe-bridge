@@ -283,13 +283,34 @@ async function removeCard(session, controllerId, cardNo) {
   }
 }
 
+// How long one sync spends writing cards before it hands back. A replacement
+// PC has no record of what the panel holds, so it rewrites every card: with
+// hundreds of tags that's minutes. In rounds this long, the Gate Bridge comes
+// back for the rest within seconds, and anything urgent that changed meanwhile
+// (a tag enrolled or suspended) goes first in the next round.
+const WRITE_BUDGET_MS = 8000;
+
+// One sync per controller at a time: two at once would write the same cards twice.
+const running = new Map(); // controllerId -> Promise
+
 /**
  * Bring the controller's cards in line with the desired list: add new ones,
- * rewrite ones whose doors, expiry or name changed, remove the rest.
+ * rewrite ones whose doors, expiry or name changed, remove the rest — most
+ * urgent first, for up to budgetMs. Returns `pending`: cards left for the next call.
  * @param {string} controllerId
  * @param {Array<{cardNo:string, employeeNo?:string, name?:string, doors?:number[], validUntil?:string|null}>} desired
+ * @param {{budgetMs?: number}} [opts]
  */
-async function sync(controllerId, desired) {
+function sync(controllerId, desired, opts = {}) {
+  const before = running.get(controllerId) || Promise.resolve();
+  const next = before.catch(() => {}).then(() => syncNow(controllerId, desired, opts));
+  running.set(controllerId, next);
+  next.catch(() => {}).finally(() => { if (running.get(controllerId) === next) running.delete(controllerId); });
+  return next;
+}
+
+async function syncNow(controllerId, desired, { budgetMs = WRITE_BUDGET_MS } = {}) {
+  const started = Date.now();
   const session = await registry.ensure(controllerId);
   const want = new Map((desired || []).filter((c) => c && c.cardNo).map((c) => [String(c.cardNo).toUpperCase(), { ...c, cardNo: String(c.cardNo).toUpperCase() }]));
   const have = provisioned.get(controllerId) || new Map();
@@ -321,17 +342,33 @@ async function sync(controllerId, desired) {
     }
   }
 
-  const toWrite = [...want.values()].filter((c) => have.get(c.cardNo) !== sigOf(c));
+  // Most urgent first. Cards that must stop opening (suspended, owing, expired)
+  // are always removed straight away. Then cards the panel doesn't hold at all
+  // (a tag enrolled just now), then changed doors, expiry or names, and last
+  // the cards found on the panel with no record of how they were written: they
+  // already open, and are rewritten only to be sure of their doors and expiry.
+  const urgency = (c) => (!have.has(c.cardNo) ? 0 : have.get(c.cardNo) ? 1 : 2);
+  const toWrite = [...want.values()]
+    .filter((c) => have.get(c.cardNo) !== sigOf(c))
+    .sort((a, b) => urgency(a) - urgency(b));
   const toRemove = [...have.keys()].filter((cardNo) => !want.has(cardNo));
   if (!toWrite.length && !toRemove.length) {
-    return { controllerId, added: 0, updated: 0, removed: 0, unchanged: want.size };
+    return { controllerId, added: 0, updated: 0, removed: 0, unchanged: want.size, pending: 0 };
   }
 
   const errors = [];
   let added = 0;
   let updated = 0;
   let removed = 0;
-  for (const c of toWrite) {
+  for (const cardNo of toRemove) {
+    try { await removeCard(session, controllerId, cardNo); have.delete(cardNo); removed++; }
+    catch (e) { errors.push({ cardNo, op: 'remove', error: e.message }); }
+  }
+  let pending = 0;
+  for (let i = 0; i < toWrite.length; i++) {
+    // Out of time: hand back, keeping what's done (at least one card per round).
+    if (i > 0 && Date.now() - started >= budgetMs) { pending = toWrite.length - i; break; }
+    const c = toWrite[i];
     const existed = have.has(c.cardNo);
     try {
       await writeCard(session, controllerId, c);
@@ -339,15 +376,11 @@ async function sync(controllerId, desired) {
       if (existed) updated++; else added++;
     } catch (e) { errors.push({ cardNo: c.cardNo, op: existed ? 'update' : 'add', error: e.message }); }
   }
-  for (const cardNo of toRemove) {
-    try { await removeCard(session, controllerId, cardNo); have.delete(cardNo); removed++; }
-    catch (e) { errors.push({ cardNo, op: 'remove', error: e.message }); }
-  }
   provisioned.set(controllerId, have);
   saveProvisioned();
-  log.info('Card provisioning applied', { controllerId, added, updated, removed, errors: errors.length });
+  log.info('Card provisioning applied', { controllerId, added, updated, removed, pending, errors: errors.length });
   if (errors.length) log.warn('Some cards were not written to the controller', { controllerId, first: errors[0] });
-  return { controllerId, added, updated, removed, total: have.size, errors };
+  return { controllerId, added, updated, removed, pending, total: have.size, errors };
 }
 
 function state() {

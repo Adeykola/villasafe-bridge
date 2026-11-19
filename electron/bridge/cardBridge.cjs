@@ -150,13 +150,19 @@ function desiredCards(lanes, tags) {
   return out;
 }
 
+// A round of writing takes up to ~8 s, but logging in to a controller and, once
+// per launch, reading back every card it holds can take much longer. Giving up
+// at 15 s meant a replacement PC's first sync "failed", waited a minute, then
+// started over while the first was still writing.
+const PROVISION_TIMEOUT_MS = 180_000;
+
 /** Write the approved card list into each Hikvision controller behind a lane. */
 async function provisionControllers(lanes, tags) {
   const results = [];
   for (const [controllerId, { params, cards }] of desiredCards(lanes, tags)) {
     try {
       await hik.ensureController(params);
-      const r = await hik.bridgeRequest('POST', '/api/cards/provision', { controllerId, cards });
+      const r = await hik.bridgeRequest('POST', '/api/cards/provision', { controllerId, cards }, { timeoutMs: PROVISION_TIMEOUT_MS });
       results.push(r);
     } catch (e) {
       diagnostics.log(`Card provisioning failed for ${controllerId}: ${e.message}`);
@@ -179,20 +185,33 @@ async function syncApproved(lanes, tags, { force = false } = {}) {
   // After a failure, retry once a minute rather than on every 5-second tick,
   // so an unplugged controller isn't hammered with logins.
   if (!force && sig === failedSig && Date.now() < retryAt) return null;
+  // One card sync at a time; whatever changed meanwhile goes in the next one.
+  if (syncing) { syncAgain = true; return null; }
+  syncing = true;
   lastProvisionSig = sig;
   try {
     const count = await pushApprovedTags(tags);
     const provisioned = await provisionControllers(lanes, tags);
     const failed = provisioned.some(r => r.error || (r.errors && r.errors.length));
+    // Cards still to write (a replacement PC catching up): the next tick carries on.
+    const pending = provisioned.reduce((n, r) => n + (Number(r.pending) || 0), 0);
     if (failed) markFailed(sig);
-    diagnostics.log(`Card list synced (${count} approved tags${failed ? ', some controllers failed — retrying in a minute' : ''})`);
-    return { count, provisioned };
+    else if (pending) lastProvisionSig = '';
+    diagnostics.log(`Card list synced (${count} approved tags${
+      failed ? ', some controllers failed — retrying in a minute' : pending ? `, ${pending} cards still to write — carrying on` : ''})`);
+    return { count, provisioned, pending };
   } catch (e) {
     // the Hikvision service may have no controllers or no SDK (direct-reader setups)
     markFailed(sig);
     return { error: e.message };
+  } finally {
+    syncing = false;
+    if (syncAgain) { syncAgain = false; if (lastProvisionSig === sig) lastProvisionSig = ''; }
   }
 }
+
+let syncing = false;
+let syncAgain = false;
 
 let failedSig = '';
 let retryAt = 0;

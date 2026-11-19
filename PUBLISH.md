@@ -44,6 +44,16 @@ local clone of this repo, bump `package.json` version, commit, and tag
 
 ## Release notes
 
+- **v1.2.14** — A replacement gate PC catches up without holding tags up.
+  A new PC has no record of what each Hikvision controller holds, so it
+  rewrites every card; with hundreds of tags that took minutes, and the bridge
+  gave up waiting after 15 seconds, called it failed, and started again a
+  minute later while the first round was still writing. Now cards that may no
+  longer open (suspended, owing, expired) are removed first, cards the
+  controller doesn't hold (a tag enrolled just now) are written next, and the
+  rest are checked in rounds of about 8 seconds, carrying on every few
+  seconds until done. Only one card sync runs at a time, and the bridge waits
+  for a long first round instead of calling it failed.
 - **v1.2.13** — Tags for people on foot. A lane is for vehicles, people on
   foot or both (set in the lane wizard, or worked out from its devices: a
   turnstile alone is a pedestrian lane), and a tag can be kept to vehicle
